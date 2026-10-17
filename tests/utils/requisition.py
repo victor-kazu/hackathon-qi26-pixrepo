@@ -26,7 +26,7 @@ class ClientRequisition:
         if headers is None:
             headers = dict()
 
-        api_host = environ.get("SERVER_LOCALHOST", "0.0.0.0")
+        api_host = environ.get("SERVER_LOCALHOST", "localhost")
         api_port = environ.get("API_PORT", "3000")
         base_url = f"http://{api_host}:{api_port}"
 

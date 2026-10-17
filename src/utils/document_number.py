@@ -5,25 +5,37 @@ CPF_CHECK_DIGIT_POSITIONS = [9, 10]
 CNPJ_FIRST_WEIGHTS = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
 CNPJ_SECOND_WEIGHTS = [6] + CNPJ_FIRST_WEIGHTS
 
+# Desde julho de 2026 a Receita emite CNPJ ALFANUMÉRICO: as 12 primeiras
+# posições podem ter letras maiúsculas; os 2 dígitos verificadores
+# continuam numéricos. A conta é a mesma de sempre, trocando o valor de
+# cada caractere pelo código ASCII menos 48: "7" vale 7 (por isso o CNPJ
+# só de números continua valendo exatamente como antes) e "A" vale 17.
+ASCII_OFFSET = 48
 
-def only_digits(document_number: str) -> str:
-    """"123.456.789-09" e "12345678909" são o mesmo CPF: guardamos só os dígitos."""
-    digits = ""
-    for character in document_number:
-        if character.isdigit():
-            digits = digits + character
 
-    return digits
+def normalize_document(document_number: str) -> str:
+    """Tira a máscara e põe as letras em maiúscula.
+
+    "123.456.789-09" e "12345678909" são o mesmo CPF, e "12.abc.345/01de-35"
+    é o mesmo CNPJ que "12ABC34501DE35": é esta forma que vai para o banco,
+    para o mesmo documento não virar dois no histórico.
+    """
+    normalized = ""
+    for character in document_number.upper():
+        if character.isalnum():
+            normalized = normalized + character
+
+    return normalized
 
 
 def is_valid_document(document_number: str) -> bool:
-    digits = only_digits(document_number)
+    normalized = normalize_document(document_number)
 
-    if len(digits) == CPF_LENGTH:
-        return is_valid_cpf(digits)
+    if len(normalized) == CPF_LENGTH:
+        return is_valid_cpf(normalized)
 
-    if len(digits) == CNPJ_LENGTH:
-        return is_valid_cnpj(digits)
+    if len(normalized) == CNPJ_LENGTH:
+        return is_valid_cnpj(normalized)
 
     return False
 
@@ -36,9 +48,15 @@ def is_valid_cpf(document_number: str) -> bool:
     decrescentes, soma, e tira o resto por 11. Resto menor que 2 vira 0;
     senão, o dígito é 11 menos o resto.
     """
-    digits = [int(character) for character in only_digits(document_number)]
+    normalized = normalize_document(document_number)
 
-    if len(digits) != CPF_LENGTH or _all_equal(digits):
+    # CPF continua só de números: letra num CPF é documento inválido.
+    if len(normalized) != CPF_LENGTH or not normalized.isdigit():
+        return False
+
+    digits = [int(character) for character in normalized]
+
+    if _all_equal(digits):
         return False
 
     for position in CPF_CHECK_DIGIT_POSITIONS:
@@ -54,19 +72,34 @@ def is_valid_cpf(document_number: str) -> bool:
 
 
 def is_valid_cnpj(document_number: str) -> bool:
-    """Mesma ideia do CPF, com os pesos que a Receita definiu para CNPJ."""
-    digits = [int(character) for character in only_digits(document_number)]
+    """Mesma ideia do CPF, com os pesos da Receita para CNPJ — numérico ou alfanumérico."""
+    normalized = normalize_document(document_number)
 
-    if len(digits) != CNPJ_LENGTH or _all_equal(digits):
+    if len(normalized) != CNPJ_LENGTH:
+        return False
+
+    # Letra só nas 12 primeiras posições (a base e a ordem); os dois
+    # verificadores são sempre dígitos.
+    base, check_digits = normalized[:12], normalized[12:]
+    if not check_digits.isdigit():
+        return False
+
+    for character in base:
+        if not ("0" <= character <= "9" or "A" <= character <= "Z"):
+            return False
+
+    values = [ord(character) - ASCII_OFFSET for character in normalized]
+
+    if _all_equal(values):
         return False
 
     for weights in (CNPJ_FIRST_WEIGHTS, CNPJ_SECOND_WEIGHTS):
         position = len(weights)
         total = 0
         for index, weight in enumerate(weights):
-            total = total + digits[index] * weight
+            total = total + values[index] * weight
 
-        if digits[position] != _check_digit(total):
+        if values[position] != _check_digit(total):
             return False
 
     return True

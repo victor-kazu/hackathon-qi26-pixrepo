@@ -1,4 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from sqlalchemy import create_engine, text
 
@@ -85,6 +87,30 @@ class TestIdempotency:
 
         assert status == 409
         assert response["code"] == "QIT002006"
+
+    def test_same_id_at_the_same_time_from_different_accounts(self):
+        """O lock é por conta pagadora: o mesmo id vindo de contas diferentes não se espera.
+
+        Quem barra o segundo é o UNIQUE(pix_id). Antes, o choque virava 500;
+        agora o request que perdeu desfaz tudo e responde 409, porque o
+        conteúdo (a conta) é outro. Fica exatamente uma análise gravada.
+        """
+        pix_id = f"pix-{uuid4()}"
+        payloads = []
+        for _ in range(5):
+            payload = PayloadGenerator.create_pix_payload()
+            payload["id"] = pix_id
+            payloads.append(payload)
+
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            results = list(pool.map(RequestGenerator.POST_pix_transaction, payloads))
+
+        assert sorted(status for status, _ in results) == [201, 409, 409, 409, 409]
+
+        winner = next(response for status, response in results if status == 201)
+        status, fetched = RequestGenerator.GET_pix_transaction(pix_id)
+        assert status == 200
+        assert fetched["key"] == winner["key"]
 
     def test_retry_does_not_count_as_a_new_attempt(self):
         source_account = PayloadGenerator.create_account()
@@ -174,6 +200,23 @@ class TestValidation:
         status, response = RequestGenerator.POST_pix_transaction(payload)
         assert status == 201, response
         assert response["metadata"]["signals"]["source_is_pf"] is False
+
+    def test_accepts_alphanumeric_cnpj(self):
+        """CNPJ com letras, emitido pela Receita desde julho de 2026 (exemplo oficial)."""
+        payload = PayloadGenerator.create_pix_payload()
+        payload["destination_account"]["owner"]["document_number"] = "12.ABC.345/01DE-35"
+
+        status, response = RequestGenerator.POST_pix_transaction(payload)
+        assert status == 201, response
+        assert response["metadata"]["signals"]["destination_is_pf"] is False
+
+    def test_refuses_alphanumeric_cnpj_with_wrong_check_digit(self):
+        payload = PayloadGenerator.create_pix_payload()
+        payload["destination_account"]["owner"]["document_number"] = "12.ABC.345/01DE-36"
+
+        status, response = RequestGenerator.POST_pix_transaction(payload)
+        assert status == 422
+        assert response["code"] == "QIT002002"
 
     def test_geolocation_is_optional_and_may_be_null(self):
         without = PayloadGenerator.create_pix_payload()

@@ -2,6 +2,8 @@ from datetime import datetime, timedelta, timezone
 from time import perf_counter
 from typing import Optional, Tuple
 
+from sqlalchemy.exc import IntegrityError
+
 from controllers.base_controller import BaseController
 from controllers.fraud_engine import parameters as p
 from controllers.fraud_engine.policy import REJECTED, decide
@@ -16,7 +18,7 @@ from errors import (
     PixIdConflict,
 )
 from repositories import PixTransactionRepository
-from utils.document_number import is_valid_document, only_digits
+from utils.document_number import is_valid_document, normalize_document
 
 # Relógio de quem chama e o nosso nunca batem no segundo. Dois minutos
 # cobrem a diferença sem abrir espaço para plantar histórico no futuro.
@@ -66,9 +68,24 @@ class PixTransactionController(BaseController):
 
         self.logger.info(f"Pix {facts.pix_id} analisado: {decision.status} ({decision.risk_score} pontos)")
 
-        pix_analysis = self.pix_transaction_repository.create(
-            facts, payload, decision, analysis_metadata, processing_time_ms
-        )
+        try:
+            pix_analysis = self.pix_transaction_repository.create(
+                facts, payload, decision, analysis_metadata, processing_time_ms
+            )
+        except IntegrityError:
+            # O mesmo id chegou ao mesmo tempo por OUTRA conta pagadora: o
+            # lock é por conta, então os dois requests não se esperaram e
+            # quem barrou o segundo foi o UNIQUE(pix_id). O rollback desfaz
+            # tudo o que este request fez, e a resposta passa a ser a do
+            # Pix que gravou primeiro: 200 se é o mesmo conteúdo, 409 se não.
+            self.session.rollback()
+
+            existing_analysis = self.pix_transaction_repository.get_analysis_by_pix_id(facts.pix_id)
+            if existing_analysis is None:
+                raise
+
+            return self._replay(existing_analysis, payload), False
+
         pix_analysis_dto = PixAnalysisDTO.obj_to_dict(pix_analysis)
         self.session.commit()
 
@@ -213,4 +230,4 @@ class PixTransactionController(BaseController):
         if not is_valid_document(raw_value):
             raise InvalidDocumentNumber(field, raw_value)
 
-        return only_digits(raw_value)
+        return normalize_document(raw_value)

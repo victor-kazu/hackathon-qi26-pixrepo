@@ -97,6 +97,14 @@ class PixTransactionRepository:
             pix_analysis.rule_hits.append(rule_hit)
 
         self.session.add(pix_analysis)
+
+        # O INSERT sai agora, ainda dentro da transação, e não só no
+        # commit: se outro request gravou o mesmo pix_id por uma conta
+        # pagadora diferente (que o lock por conta não serializa), o
+        # UNIQUE(pix_id) estoura AQUI, onde o controller ainda consegue
+        # desfazer tudo e responder com a análise que ficou.
+        self.session.flush()
+
         return pix_analysis
 
     # ─── Leitura ────────────────────────────────────────────────────

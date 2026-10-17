@@ -1,7 +1,11 @@
+"""Os testes unitários chamam as regras direto no Python, sem API nem banco.
+
+São a exceção ao "não importa nada de src/" dos testes black box: aqui o
+objetivo é justamente testar a função sozinha, rápido e com precisão —
+cada limiar exatamente no ponto em que muda de lado.
+"""
+
 import sys
 from pathlib import Path
 
-# As regras são Python puro: os testes de unidade importam o motor
-# direto de src/, sem API e sem banco de pé.
-SRC_PATH = Path(__file__).resolve().parents[2] / "src"
-sys.path.insert(0, str(SRC_PATH))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))

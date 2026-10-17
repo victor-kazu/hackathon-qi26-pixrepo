@@ -6,6 +6,3 @@
 pytest==7.4.4
 pytest-cov==4.1.0
 python-dotenv==1.0.1
-# Windows nao traz a base de fusos horarios que o zoneinfo le
-# (America/Sao_Paulo); no Linux e no Mac ela ja vem com o sistema.
-tzdata==2024.1

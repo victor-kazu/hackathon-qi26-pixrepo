@@ -2,52 +2,160 @@
   "title": "PostPixTransaction",
   "type": "object",
   "properties": {
-    "id": { "type": "string", "minLength": 1, "maxLength": 100 },
-    "amount": { "type": "integer", "minimum": 1, "maximum": 100000000000 },
-    "transaction_date": { "$ref": "pix_definitions.json#/definitions/datetime_with_timezone" },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "amount": {
+      "description": "Valor em centavos, inteiro e positivo.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 999999999999999
+    },
+    "transaction_date": {
+      "description": "ISO 8601 com fuso obrigatorio: 2026-10-17T22:15:00-03:00. Sem o fuso nao da para saber a hora local do pagador, e a regra noturna depende dela.",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$"
+    },
     "source_account": {
       "type": "object",
       "properties": {
-        "branch": { "$ref": "pix_definitions.json#/definitions/branch" },
-        "account_number": { "$ref": "pix_definitions.json#/definitions/account_number" },
-        "opening_date": { "$ref": "pix_definitions.json#/definitions/datetime_with_timezone" },
-        "owner": { "$ref": "pix_definitions.json#/definitions/owner" }
+        "branch": {
+          "type": "string",
+          "pattern": "^\\d{1,10}$"
+        },
+        "account_number": {
+          "type": "string",
+          "pattern": "^[0-9A-Za-z-]{1,20}$"
+        },
+        "opening_date": {
+          "description": "ISO 8601 com fuso obrigatorio: 2026-10-17T22:15:00-03:00. Sem o fuso nao da para saber a hora local do pagador, e a regra noturna depende dela.",
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$"
+        },
+        "owner": {
+          "type": "object",
+          "properties": {
+            "document_number": {
+              "description": "CPF (000.000.000-00) ou CNPJ (00.000.000/0000-00, inclusive alfanumerico), com ou sem mascara.",
+              "type": "string",
+              "pattern": "^(\\d{3}\\.?\\d{3}\\.?\\d{3}-?\\d{2}|[0-9A-Za-z]{2}\\.?[0-9A-Za-z]{3}\\.?[0-9A-Za-z]{3}/?[0-9A-Za-z]{4}-?\\d{2})$"
+            }
+          },
+          "required": [
+            "document_number"
+          ],
+          "additionalProperties": false
+        }
       },
-      "required": ["branch", "account_number", "opening_date", "owner"],
+      "required": [
+        "branch",
+        "account_number",
+        "opening_date",
+        "owner"
+      ],
       "additionalProperties": false
     },
     "destination_account": {
       "type": "object",
       "properties": {
-        "participant": { "type": "string", "pattern": "^\\d{8}$" },
-        "branch": { "$ref": "pix_definitions.json#/definitions/branch" },
-        "account_number": { "$ref": "pix_definitions.json#/definitions/account_number" },
-        "opening_date": { "$ref": "pix_definitions.json#/definitions/datetime_with_timezone" },
-        "owner": { "$ref": "pix_definitions.json#/definitions/owner" }
+        "participant": {
+          "description": "ISPB do banco de destino: 8 digitos.",
+          "type": "string",
+          "pattern": "^\\d{8}$"
+        },
+        "branch": {
+          "type": "string",
+          "pattern": "^\\d{1,10}$"
+        },
+        "account_number": {
+          "type": "string",
+          "pattern": "^[0-9A-Za-z-]{1,20}$"
+        },
+        "opening_date": {
+          "description": "ISO 8601 com fuso obrigatorio: 2026-10-17T22:15:00-03:00. Sem o fuso nao da para saber a hora local do pagador, e a regra noturna depende dela.",
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$"
+        },
+        "owner": {
+          "type": "object",
+          "properties": {
+            "document_number": {
+              "description": "CPF (000.000.000-00) ou CNPJ (00.000.000/0000-00, inclusive alfanumerico), com ou sem mascara.",
+              "type": "string",
+              "pattern": "^(\\d{3}\\.?\\d{3}\\.?\\d{3}-?\\d{2}|[0-9A-Za-z]{2}\\.?[0-9A-Za-z]{3}\\.?[0-9A-Za-z]{3}/?[0-9A-Za-z]{4}-?\\d{2})$"
+            }
+          },
+          "required": [
+            "document_number"
+          ],
+          "additionalProperties": false
+        }
       },
-      "required": ["participant", "branch", "account_number", "opening_date", "owner"],
+      "required": [
+        "participant",
+        "branch",
+        "account_number",
+        "opening_date",
+        "owner"
+      ],
       "additionalProperties": false
     },
     "source": {
       "type": "object",
       "properties": {
-        "device_id": { "type": "string", "minLength": 1, "maxLength": 100 },
-        "channel": { "type": "string", "minLength": 1, "maxLength": 30 },
-        "ip": { "type": "string", "minLength": 2, "maxLength": 45, "pattern": "^[0-9a-fA-F:.]+$" },
+        "device_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "channel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 30
+        },
+        "ip": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 45
+        },
         "geolocation": {
-          "type": ["object", "null"],
+          "type": "object",
           "properties": {
-            "latitude": { "type": "number", "minimum": -90, "maximum": 90 },
-            "longitude": { "type": "number", "minimum": -180, "maximum": 180 }
+            "latitude": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            },
+            "longitude": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            }
           },
-          "required": ["latitude", "longitude"],
+          "required": [
+            "latitude",
+            "longitude"
+          ],
           "additionalProperties": false
         }
       },
-      "required": ["device_id", "channel", "ip"],
+      "required": [
+        "device_id",
+        "channel",
+        "ip"
+      ],
       "additionalProperties": false
     }
   },
-  "required": ["id", "amount", "transaction_date", "source_account", "destination_account", "source"],
+  "required": [
+    "id",
+    "amount",
+    "transaction_date",
+    "source_account",
+    "destination_account",
+    "source"
+  ],
   "additionalProperties": false
 }

@@ -124,8 +124,8 @@ class SchemaHandler:
 
         Usa-se assim, num metodo que recebe a requisicao inteira:
 
-            class AlgumResource:
-                @SchemaHandler.validate_query_params("get_alguma_lista.json")
+            class PixTransactionResource:
+                @SchemaHandler.validate_query_params("get_sample_entities.json")
                 def on_get_list(self, request: Request) -> JSONResponse:
 
         Por que ler do `request` em vez dos argumentos da funcao: o

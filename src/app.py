@@ -132,13 +132,14 @@ def create_app() -> FastAPI:
         methods=["GET"]
     )
 
+    # O contrato do desafio: analisa um Pix e devolve a análise gravada.
     application.add_api_route(
         "/pix/transaction",
         pix_transaction_resource.on_post,
         methods=["POST"],
     )
     application.add_api_route(
-        "/pix/transaction/{pix_id}",
+        "/pix/transaction/{transaction_id}",
         pix_transaction_resource.on_get_by_id,
         methods=["GET"],
     )

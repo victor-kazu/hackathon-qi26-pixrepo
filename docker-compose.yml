@@ -31,17 +31,10 @@ services:
       # endereco do banco e sempre este.
       DATABASE_URL: postgresql+psycopg2://bootcamp:bootcamp@db:5432/bootcamp
       APP_ENV: ${APP_ENV:-local}
-      SERVICE_NAME: ${SERVICE_NAME:-pix-antifraude-api}
+      SERVICE_NAME: ${SERVICE_NAME:-antifraude-pix}
       # A senha que protege os endpoints internos. O padrao vale pra
       # estudar; num sistema de verdade, isso nunca teria valor padrao.
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-default_token}
-      # A API de boletos (assunto do sabado 4). Variavel que nao esta
-      # nesta lista NAO CHEGA no container: o compose repassa o que
-      # esta escrito aqui, e mais nada. Sem estas tres linhas, mexer
-      # nos BANKSLIP_* do .env nao teria efeito nenhum aqui dentro.
-      BANKSLIP_API_URL: ${BANKSLIP_API_URL:-http://localhost:8080}
-      BANKSLIP_API_INTERNAL_TOKEN: ${BANKSLIP_API_INTERNAL_TOKEN:-default_token}
-      BANKSLIP_API_TIMEOUT: ${BANKSLIP_API_TIMEOUT:-5}
     volumes:
       # Monta o codigo pra dentro do container: salvou o arquivo,
       # a API recarrega sozinha (o --reload ali embaixo).

@@ -2,67 +2,62 @@ from errors import QIException
 
 
 class NotFoundPixTransaction(QIException):
-    code = "QIT002001"
+    code = "QIT001001"
 
-    def __init__(self, pix_id) -> None:
+    def __init__(self, transaction_id) -> None:
         title = "Pix transaction not Found"
         http_status = 404
-        description = f"There is no analysis for the Pix transaction {pix_id}."
-        translation = f"Não existe análise para o Pix {pix_id}."
+        description = f"No analysis was recorded for the Pix {transaction_id}."
+        translation = f"Nenhuma análise foi gravada para o Pix {transaction_id}."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class PixTransactionIdReused(QIException):
+    """O mesmo `id` de Pix chegou com um conteúdo diferente.
+
+    O `id` é a chave de idempotência: o mesmo Pix reenviado devolve a
+    mesma análise. Um `id` repetido com OUTRO valor, outro recebedor ou
+    outra data não é reenvio — é outro Pix tentando usar um id que já tem
+    dono, e reavaliar seria deixar uma decisão sobrescrever a outra.
+    """
+
+    code = "QIT001002"
+
+    def __init__(self, transaction_id) -> None:
+        title = "Pix transaction id reused"
+        http_status = 409
+        description = f"The Pix id {transaction_id} was already analysed with a different payload."
+        translation = "Este id de Pix já foi analisado com outro conteúdo."
         super().__init__(title, self.code, http_status, description, translation)
 
 
 class InvalidDocumentNumber(QIException):
-    """O CPF/CNPJ tem o formato certo e não existe (dígito verificador não bate)."""
+    """O CPF ou CNPJ tem o formato certo e não existe.
 
-    code = "QIT002002"
+    422, e não 400: a API leu o pedido e entendeu; o valor é que não pode
+    existir, porque os dígitos verificadores não batem. Pix com documento
+    impossível não chega a ser analisado — não é decisão antifraude, é
+    entrada inválida.
+    """
 
-    def __init__(self, field, document_number) -> None:
+    code = "QIT001003"
+
+    def __init__(self, field_name, document_number) -> None:
         title = "Invalid Document Number"
         http_status = 422
-        description = f"The document number {document_number} in {field} is not a valid CPF or CNPJ."
-        translation = f"O CPF/CNPJ informado em {field} não é válido."
+        description = f"The document number {document_number} in {field_name} is not a valid CPF or CNPJ."
+        translation = "O CPF ou CNPJ informado não é válido."
         super().__init__(title, self.code, http_status, description, translation)
 
 
 class InvalidDate(QIException):
-    """A data tem o formato certo e não existe no calendário (ex.: 2026-02-30)."""
+    """A data tem o formato certo e não existe no calendário ("2026-02-30")."""
 
-    code = "QIT002003"
+    code = "QIT001004"
 
-    def __init__(self, field, value) -> None:
+    def __init__(self, field_name, raw_date) -> None:
         title = "Invalid Date"
         http_status = 422
-        description = f"The value {value} in {field} is not a real date."
-        translation = f"A data informada em {field} não existe."
-        super().__init__(title, self.code, http_status, description, translation)
-
-
-class AccountOpenedAfterTransaction(QIException):
-    """Uma conta não pode ter sido aberta depois do Pix que ela fez ou recebeu."""
-
-    code = "QIT002004"
-
-    def __init__(self, field) -> None:
-        title = "Inconsistent Opening Date"
-        http_status = 422
-        description = f"{field} is after transaction_date."
-        translation = f"A data de abertura em {field} é posterior à data do Pix."
-        super().__init__(title, self.code, http_status, description, translation)
-
-
-class FutureTransactionDate(QIException):
-    """O Pix diz que aconteceu no futuro.
-
-    Aceitar seria deixar alguém plantar histórico adiantado e envenenar
-    as janelas de velocity dos próximos Pix.
-    """
-
-    code = "QIT002005"
-
-    def __init__(self, transaction_date, tolerance_minutes) -> None:
-        title = "Future Transaction Date"
-        http_status = 422
-        description = f"transaction_date {transaction_date} is more than {tolerance_minutes} minutes in the future."
-        translation = "A data do Pix está no futuro."
+        description = f"The date {raw_date} in {field_name} is not a real date."
+        translation = "A data informada não existe."
         super().__init__(title, self.code, http_status, description, translation)

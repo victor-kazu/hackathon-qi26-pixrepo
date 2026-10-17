@@ -36,8 +36,8 @@ def register_session_manager_middleware(application: FastAPI) -> None:
     então commita. E seria errado.
 
     Quem sabe se o trabalho terminou é o controller, não a camada de
-    fora. Abra src/controllers/pix_transaction_controller.py: em `analyze`
-    o `self.session.commit()` é a ÚLTIMA linha antes
+    fora. Abra src/controllers/pix_transaction_controller.py: em `analyze`, o
+    `self.session.commit()` é a ÚLTIMA linha antes
     do `return` — depois que a regra passou, nunca antes.
 
     Com o commit aqui, esse controle sumiria. Uma rota que grava e depois
@@ -99,7 +99,7 @@ def register_session_manager_middleware(application: FastAPI) -> None:
 
         GET /                    -> 500
         GET /health_check        -> 500
-        GET /pix/transaction/{id} -> 200
+        GET /pix/transaction/x   -> 404
         POST /pix/transaction    -> 201
 
         AttributeError: 'NoneType' object has no attribute 'close'

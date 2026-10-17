@@ -102,7 +102,16 @@ Os bônus só reduzem a própria categoria e nunca a deixam negativa: confiar no
 
 ## Como as regras viram decisão
 
-A primeira linha que bate decide:
+É um sistema de pontuação em duas camadas.
+
+1. **Regras duras** não somam pontos. Se uma delas dispara, o Pix é `rejected` na hora, seja qual for o resto (ex.: 5ª tentativa em 5 minutos, Pix de pessoa física acima de R$ 5.000 à noite).
+2. **Regras de pontuação** somam pontos em uma de duas contas separadas:
+   - **identidade**: é mesmo o cliente quem está pagando? O 2FA resolve essa dúvida.
+   - **destino**: para onde vai o dinheiro? O 2FA não resolve, porque no golpe de engenharia social quem paga é o próprio cliente, e ele passa no 2FA.
+
+   Os bônus de confiança (destino que o cliente já paga há tempo, Pix para conta do mesmo titular) são pontos negativos dentro da sua conta, que nunca fica abaixo de zero.
+
+Com as duas contas fechadas, a tabela é lida de cima para baixo e a primeira linha que bate decide:
 
 | Ordem | Condição | Status | Racional |
 |---|---|---|---|
@@ -113,6 +122,16 @@ A primeira linha que bate decide:
 | 5 | O resto | `approved` | Sem fricção. |
 
 O Pix de exemplo do enunciado (R$ 1.500 às 22h15 para uma conta aberta há 7 dias) dá `two_factor_required`: limite noturno (+40 identidade), conta destino com menos de 30 dias (+15) e primeiro Pix para ela (+10), total 65.
+
+Um exemplo para cada desfecho:
+
+| Pix | Pontos | Status |
+|---|---|---|
+| R$ 300 às 14h para a diarista, que recebe dele há meses | nenhuma regra de risco; bônus de −30 no destino, que fica em 0 | `approved` |
+| R$ 1.500 às 22h15 para conta aberta há 7 dias (o exemplo do enunciado) | identidade 40 + destino 25 = 65 | `two_factor_required` |
+| R$ 3.000 às 15h, no aparelho de sempre, de um cliente que costuma fazer Pix de R$ 500, para conta aberta há 3 dias | identidade 0; destino 30 (conta nova) + 20 (6x o padrão) + 10 (primeiro Pix) = 60 | `rejected` pela linha 2, mesmo com identidade limpa |
+| R$ 800 de um aparelho novo, 3ª tentativa em 5 minutos, para conta aberta há 20 dias | identidade 45 (aparelho novo acima de R$ 200) + 25 (rajada); destino 15 + 10 = 95 | `rejected` pela linha 3 |
+| R$ 6.000 às 23h | regra dura do teto noturno | `rejected` pela linha 1 |
 
 A resposta segue o contrato e explica a decisão na `metadata`:
 

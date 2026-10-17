@@ -1,6 +1,6 @@
 # Grupo 3
 
-**Integrantes:** [nomes]
+**Integrantes:** Victor Kazunori e Matheus Reis
 
 Motor antifraude de Pix: uma API que recebe um Pix, compara com o histórico de quem paga, de quem recebe e do aparelho, e decide em poucos milissegundos se ele sai (`approved`), se o cliente precisa confirmar que é ele (`two_factor_required`) ou se é bloqueado (`rejected`). Toda decisão sai com o motivo, as regras acionadas e os sinais que as acionaram.
 

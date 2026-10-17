@@ -183,6 +183,21 @@ class TestScams:
         # A partir daí o destino está marcado pela rejeição de outro pagador.
         assert "FLAGGED_DESTINATION" in rules_of(responses[5])
 
+    def test_rejection_that_is_not_about_the_destination_does_not_flag_it(self):
+        """Pix barrado pelo teto noturno do pagador não suja a conta de quem ia receber."""
+        destination = PayloadGenerator.create_account(participant="60701190")
+        blocked = ObjectGenerator.analyze_pix(
+            amount=600_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=2, hour=23),
+            destination_account=destination,
+        )
+
+        response = ObjectGenerator.analyze_pix(destination_account=destination)
+
+        assert blocked["status"] == "rejected"
+        assert "FLAGGED_DESTINATION" not in rules_of(response)
+        assert response["metadata"]["signals"]["destination_flagged_payers_30d"] == 0
+
     def test_amount_far_above_the_customer_pattern_to_a_new_destination(self):
         source_account = PayloadGenerator.create_account()
         device_id = new_device()

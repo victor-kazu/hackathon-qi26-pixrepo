@@ -210,15 +210,17 @@ class PixTransactionRepository:
         )
         return query.scalar() + 1
 
-    def count_destination_rejections_by_others(self, facts: TransactionFacts, window: timedelta) -> int:
+    def count_destination_flagged_payers(self, facts: TransactionFacts, window: timedelta, min_beneficiary_score: int) -> int:
+        """Outros pagadores que tiveram Pix para este destino rejeitado por causa do destino."""
         query = (
-            self.session.query(func.count(PixTransaction.id))
+            self.session.query(func.count(func.distinct(PixTransaction.source_document_number)))
             .join(PixTransaction.analysis)
             .join(PixAnalysis.status)
             .filter(
                 self._destination_filter(facts),
                 PixTransaction.source_document_number != facts.source_document_number,
                 PixAnalysisStatus.enumerator == PixAnalysisStatus.REJECTED,
+                PixAnalysis.beneficiary_score >= min_beneficiary_score,
                 *self._window_filter(facts, window),
             )
         )

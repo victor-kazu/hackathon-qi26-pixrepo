@@ -282,17 +282,18 @@ def destination_fan_in(signals: Signals) -> Optional[RuleHit]:
 
 
 def flagged_destination(signals: Signals) -> Optional[RuleHit]:
-    rejections = signals.history.destination_rejections_by_others
-    if rejections <= 0:
+    payers = signals.history.destination_flagged_payers
+    if payers <= 0:
         return None
 
     points = p.FLAGGED_DESTINATION_POINTS
-    if rejections >= p.FLAGGED_DESTINATION_HIGH_REJECTIONS:
+    if payers >= p.FLAGGED_DESTINATION_HIGH_PAYERS:
         points = p.FLAGGED_DESTINATION_HIGH_POINTS
 
     return RuleHit(
         "FLAGGED_DESTINATION", BENEFICIARY, points, False,
-        f"destino teve {rejections} Pix rejeitado(s) de outros pagadores em {p.FLAGGED_DESTINATION_WINDOW_DAYS} dias",
+        f"{payers} outro(s) pagador(es) tiveram Pix para este destino rejeitado por risco do destino "
+        f"em {p.FLAGGED_DESTINATION_WINDOW_DAYS} dias",
     )
 
 

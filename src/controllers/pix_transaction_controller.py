@@ -134,8 +134,8 @@ class PixTransactionController(BaseController):
             destination_distinct_payers=repository.count_destination_distinct_payers(
                 facts, timedelta(hours=p.FAN_IN_WINDOW_HOURS)
             ),
-            destination_rejections_by_others=repository.count_destination_rejections_by_others(
-                facts, timedelta(days=p.FLAGGED_DESTINATION_WINDOW_DAYS)
+            destination_flagged_payers=repository.count_destination_flagged_payers(
+                facts, timedelta(days=p.FLAGGED_DESTINATION_WINDOW_DAYS), p.REJECT_BENEFICIARY_SCORE
             ),
         )
 

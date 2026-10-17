@@ -7,7 +7,7 @@ análise, e é o que permite explicar uma decisão antiga com a regra que
 valia no dia.
 """
 
-POLICY_VERSION = "2026.10.17-v2"
+POLICY_VERSION = "2026.10.17-v3"
 
 REAIS = 100
 
@@ -179,10 +179,18 @@ FAN_IN_HIGH_POINTS = 50
 
 # Reputação de rede: o destino já teve Pix barrado vindo de OUTROS
 # pagadores. Se alguém foi barrado tentando pagar essa conta, a próxima
-# vítima provavelmente está a caminho.
+# vítima provavelmente está a caminho. Duas travas contra marcar inocente:
+# - só conta rejeição causada pelo destino (risco de destino >= corte de
+#   rejeição). Celular roubado tentando pagar a mãe da vítima é rejeitado
+#   por aparelho novo, e isso não diz nada sobre a conta da mãe;
+# - conta pagadores distintos, não rejeições: um só pagador insistindo
+#   não leva o destino ao nível máximo, e "sujar" a conta de alguém de
+#   propósito exige vários CPFs.
+# É pontuação com janela, não blacklist permanente: lista dura se
+# alimenta sozinha (marcada, tudo é rejeitado, nunca sai da lista).
 FLAGGED_DESTINATION_WINDOW_DAYS = 30
 FLAGGED_DESTINATION_POINTS = 35
-FLAGGED_DESTINATION_HIGH_REJECTIONS = 3
+FLAGGED_DESTINATION_HIGH_PAYERS = 3
 FLAGGED_DESTINATION_HIGH_POINTS = 50
 
 # Primeiro Pix para este destino. Sozinho é fraco (todo mundo paga

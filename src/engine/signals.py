@@ -80,7 +80,7 @@ class History:
     ip_distinct_documents: int = 1
     previous_location: Optional[PreviousLocation] = None
     destination_distinct_payers: int = 1
-    destination_rejections_by_others: int = 0
+    destination_flagged_payers: int = 0
 
 
 @dataclass(frozen=True)
@@ -134,7 +134,7 @@ class Signals:
             "travel_distance_km": _round_or_none(self.travel_distance_km),
             "travel_speed_kmh": _round_or_none(self.travel_speed_kmh),
             "destination_distinct_payers_24h": self.history.destination_distinct_payers,
-            "destination_rejections_by_others_30d": self.history.destination_rejections_by_others,
+            "destination_flagged_payers_30d": self.history.destination_flagged_payers,
         }
 
 

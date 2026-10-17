@@ -221,8 +221,11 @@ class TestDestination:
         assert "DESTINATION_FAN_IN" not in rule_codes(make_signals(payers, destination_document_number="11222333000181"))
 
     def test_flagged_destination(self):
-        hit = find_hit(make_signals(History(destination_rejections_by_others=3)), "FLAGGED_DESTINATION")
-        assert hit.points == p.FLAGGED_DESTINATION_HIGH_POINTS
+        one = find_hit(make_signals(History(destination_flagged_payers=1)), "FLAGGED_DESTINATION")
+        three = find_hit(make_signals(History(destination_flagged_payers=3)), "FLAGGED_DESTINATION")
+
+        assert one.points == p.FLAGGED_DESTINATION_POINTS
+        assert three.points == p.FLAGGED_DESTINATION_HIGH_POINTS
 
     def test_profile_spike_uses_median_with_floor(self):
         # Mediana de R$ 5 sobe para o piso de R$ 100: R$ 250 é 2,5x, não 50x.

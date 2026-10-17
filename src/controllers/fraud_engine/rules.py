@@ -199,6 +199,24 @@ def new_source_account(signals: Signals) -> Optional[RuleHit]:
     return None
 
 
+def high_value_without_profile(signals: Signals) -> Optional[RuleHit]:
+    # Com perfil, quem cuida do valor é o PROFILE_AMOUNT_SPIKE.
+    if signals.profile_ratio is not None or signals.is_self_transfer:
+        return None
+
+    multiplier = 1 if signals.source_is_pf else p.HIGH_VALUE_PJ_MULTIPLIER
+    amount = signals.facts.amount
+    threshold = p.HIGH_VALUE_AMOUNT * multiplier
+    if amount < threshold:
+        return None
+
+    return RuleHit(
+        "HIGH_VALUE_WITHOUT_PROFILE", IDENTITY, p.HIGH_VALUE_POINTS, False,
+        f"{_reais(amount)} a partir de {_reais(threshold)}, sem histórico para comparar "
+        f"(menos de {p.PROFILE_MIN_TRANSACTIONS} Pix aprovados)",
+    )
+
+
 def split_payment(signals: Signals) -> Optional[RuleHit]:
     if signals.is_self_transfer:
         return None
@@ -315,24 +333,6 @@ def profile_amount_spike(signals: Signals) -> Optional[RuleHit]:
     )
 
 
-def high_value_without_profile(signals: Signals) -> Optional[RuleHit]:
-    # Com perfil, quem cuida do valor é o PROFILE_AMOUNT_SPIKE.
-    if signals.profile_ratio is not None or signals.is_self_transfer:
-        return None
-
-    multiplier = 1 if signals.source_is_pf else p.HIGH_VALUE_PJ_MULTIPLIER
-    amount = signals.facts.amount
-    threshold = p.HIGH_VALUE_AMOUNT * multiplier
-    if amount < threshold:
-        return None
-
-    return RuleHit(
-        "HIGH_VALUE_WITHOUT_PROFILE", BENEFICIARY, p.HIGH_VALUE_POINTS, False,
-        f"{_reais(amount)} a partir de {_reais(threshold)}, sem histórico para comparar "
-        f"(menos de {p.PROFILE_MIN_TRANSACTIONS} Pix aprovados)",
-    )
-
-
 def structuring(signals: Signals) -> Optional[RuleHit]:
     # Valores iguais para o mesmo destino já são SPLIT_PAYMENT: não conta duas vezes.
     if split_payment(signals) is not None:
@@ -432,6 +432,7 @@ RULES: List[Callable[[Signals], Optional[RuleHit]]] = [
     new_device,
     impossible_travel,
     new_source_account,
+    high_value_without_profile,
     split_payment,
     shared_device,
     shared_ip,
@@ -439,7 +440,6 @@ RULES: List[Callable[[Signals], Optional[RuleHit]]] = [
     destination_fan_in,
     flagged_destination,
     profile_amount_spike,
-    high_value_without_profile,
     structuring,
     daily_exposure,
     new_counterparty,

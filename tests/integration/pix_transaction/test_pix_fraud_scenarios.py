@@ -265,12 +265,13 @@ class TestScams:
         assert "SPLIT_PAYMENT" in rules_of(responses[2])
         assert "STRUCTURING" not in rules_of(responses[2])
 
-    def test_high_value_without_history_weighs_but_does_not_block_alone(self):
-        """R$ 6 mil soma 30 e passa; R$ 15 mil já é mais da metade do teto diário e pede 2FA."""
+    def test_first_pix_of_high_value_asks_for_two_factor(self):
+        """Sem histórico, R$ 6 mil pede 2FA (30 + 10); R$ 15 mil também, sem chegar a rejeitar."""
         high = ObjectGenerator.analyze_pix(amount=600_000)
         higher = ObjectGenerator.analyze_pix(amount=1_500_000)
 
-        assert high["status"] == "approved"
+        assert high["status"] == "two_factor_required"
+        assert high["metadata"]["risk_score"] == 40
         assert rules_of(high) == ["HIGH_VALUE_WITHOUT_PROFILE", "NEW_COUNTERPARTY"]
         assert higher["status"] == "two_factor_required"
         assert rules_of(higher) == ["HIGH_VALUE_WITHOUT_PROFILE", "DAILY_EXPOSURE", "NEW_COUNTERPARTY"]

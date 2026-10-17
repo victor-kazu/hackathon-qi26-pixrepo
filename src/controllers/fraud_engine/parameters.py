@@ -7,7 +7,7 @@ análise, e é o que permite explicar uma decisão antiga com a regra que
 valia no dia.
 """
 
-POLICY_VERSION = "2026.10.17-v3"
+POLICY_VERSION = "2026.10.17-v4"
 
 REAIS = 100
 
@@ -106,14 +106,16 @@ PROFILE_SPIKE_POINTS = 20
 PROFILE_EXTREME_RATIO = 10
 PROFILE_EXTREME_POINTS = 35
 
-# Valor alto de quem ainda não tem perfil. Sem histórico não dá para
-# dizer que o valor é "fora do padrão", mas é onde a fraude dói: pesa
-# moderado, para que só junto de outro sinal chegue ao 2FA. Primeiro
-# Pix de valor baixo continua sem ponto nenhum. Não há degrau acima: a
-# partir de R$ 10 mil o DAILY_EXPOSURE (metade do teto diário) já soma.
+# Valor alto de quem ainda não tem perfil (menos de 5 Pix aprovados).
+# Sem histórico não dá para dizer que o valor é "fora do padrão", e
+# também não dá para dizer que é o cliente: conta antiga e parada que de
+# repente manda R$ 6 mil é o retrato da conta tomada. É dúvida de
+# identidade, que o 2FA resolve, então pesa 30: junto do primeiro Pix
+# para o destino (+10) chega aos 40 do 2FA. Primeiro Pix de valor baixo
+# continua sem ponto nenhum, e o aluguel recorrente (bônus de -30) passa.
 # PJ movimenta mais por natureza, então o valor é 10x maior.
 HIGH_VALUE_AMOUNT = 5_000 * REAIS
-HIGH_VALUE_POINTS = 20
+HIGH_VALUE_POINTS = 30
 HIGH_VALUE_PJ_MULTIPLIER = 10
 
 # ─── Aparelho ───────────────────────────────────────────────────────

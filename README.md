@@ -200,9 +200,9 @@ Validações que devolvem 422: CPF/CNPJ com dígito verificador inválido, data 
 
 ## Simulação: como calibramos
 
-`scripts/simulate.py` gera 60 dias de histórico de 150 pessoas e 5 empresas (mercado, amigos, aluguel, fornecedores, folha) e, no último dia, mistura o uso normal com os casos legítimos que mais se parecem com fraude e com 14 cenários de ataque. Tudo vai para a API em ordem cronológica, e só o último dia é medido. O repasse do laranja só acontece se o dinheiro das vítimas chegou (Pix aprovado ou com 2FA), como na vida real.
+`scripts/simulate.py` gera 60 dias de histórico de 150 pessoas e 5 empresas (mercado, amigos, aluguel, fornecedores, folha) e, no último dia, mistura o uso normal com os casos legítimos que mais se parecem com fraude e com 13 cenários de ataque. Tudo vai para a API em ordem cronológica, e só o último dia é medido. O repasse do laranja só acontece se o dinheiro das vítimas chegou (Pix aprovado ou com 2FA), como na vida real.
 
-"Contido" depende do golpe. Quando o fraudador usa a conta de outra pessoa, o 2FA segura, porque ele não tem o segundo fator. Quando quem paga é a vítima enganada, ou o fraudador é o dono da conta, o 2FA não segura nada e só a rejeição conta.
+A coluna "2FA segura?" diz se o 2FA impede aquele golpe. Quando o fraudador usa a conta de outra pessoa, o 2FA segura, porque ele não tem o segundo fator. Quando quem paga é a vítima enganada, ou o fraudador é o dono da conta, o 2FA não segura nada e só a rejeição protege.
 
 Resultado com `--seed 42` (4.390 Pix, 737 medidos):
 
@@ -218,30 +218,33 @@ Resultado com `--seed 42` (4.390 Pix, 737 medidos):
 | Fornecedor (empresa) | 7 | 100,0% | 0,0% | 0,0% |
 | Folha de pagamento pelo app (empresa) | 50 | 30,0% | 70,0% | 0,0% |
 
-| Fraude | Pix | Aprovado | 2FA | Rejeitado | 2FA segura? | Contido |
-|---|---:|---:|---:|---:|:---:|---:|
-| Tomada de conta, aparelho novo | 18 | 0,0% | 0,0% | 100,0% | sim | 100,0% |
-| Celular roubado à noite | 18 | 5,6% | 16,7% | 77,8% | sim | 94,4% |
-| Drenagem noturna espalhada | 36 | 50,0% | 33,3% | 16,7% | sim | 50,0% |
-| Viagem impossível | 12 | 0,0% | 16,7% | 83,3% | sim | 100,0% |
-| Robô em rajada | 48 | 37,5% | 54,2% | 8,3% | sim | 62,5% |
-| Fracionamento, valor repetido | 24 | 50,0% | 25,0% | 25,0% | sim | 50,0% |
-| Fracionamento noturno | 18 | 66,7% | 22,2% | 11,1% | sim | 33,3% |
-| Golpe para conta laranja | 12 | 0,0% | 0,0% | 100,0% | não | 100,0% |
-| Cadeia: vítima paga laranja | 12 | 0,0% | 33,3% | 66,7% | não | 66,7% |
-| Cadeia: laranja repassa | 2 | 0,0% | 0,0% | 100,0% | não | 100,0% |
-| Cadeia: vítima paga a conta central | 6 | 0,0% | 0,0% | 100,0% | não | 100,0% |
-| Conta espelho (mão fantasma) | 6 | 0,0% | 0,0% | 100,0% | não | 100,0% |
-| Conta aberta com documento roubado | 12 | 0,0% | 25,0% | 75,0% | não | 75,0% |
-| Fazenda de aparelhos | 6 | 33,3% | 0,0% | 66,7% | não | 66,7% |
+| Fraude | Pix | Aprovado | 2FA | Rejeitado | 2FA segura? |
+|---|---:|---:|---:|---:|:---:|
+| Tomada de conta, aparelho novo | 18 | 0,0% | 0,0% | 100,0% | sim |
+| Celular roubado à noite | 18 | 5,6% | 16,7% | 77,8% | sim |
+| Drenagem noturna espalhada | 36 | 50,0% | 33,3% | 16,7% | sim |
+| Viagem impossível | 12 | 0,0% | 16,7% | 83,3% | sim |
+| Robô em rajada | 48 | 37,5% | 54,2% | 8,3% | sim |
+| Fracionamento, valor repetido | 24 | 50,0% | 25,0% | 25,0% | sim |
+| Fracionamento noturno | 18 | 66,7% | 22,2% | 11,1% | sim |
+| Golpe para conta laranja | 12 | 0,0% | 0,0% | 100,0% | não |
+| Cadeia: vítima paga laranja | 12 | 0,0% | 33,3% | 66,7% | não |
+| Cadeia: laranja repassa | 2 | 0,0% | 0,0% | 100,0% | não |
+| Cadeia: vítima paga a conta central | 6 | 0,0% | 0,0% | 100,0% | não |
+| Conta espelho (mão fantasma) | 6 | 0,0% | 0,0% | 100,0% | não |
+| Fazenda de aparelhos | 6 | 33,3% | 0,0% | 66,7% | não |
 
-70% das tentativas de fraude e 82% do valor fraudado foram contidos. Dos Pix de clientes bons, 90,0% passaram direto, 10,0% pediram 2FA e nenhum foi rejeitado; no uso do dia a dia, 99% passam direto. Latência do motor: p50 de 26 ms e p99 de 38 ms. Com outra semente e o dobro de clientes (`--seed 7 --customers 300`), os números se mantêm: 71% dos Pix e 80% do valor contidos, 89,5% dos clientes bons aprovados direto e 1 rejeitado em 902.
+Na drenagem noturna, nos dois fracionamentos e no robô, os primeiros Pix são iguais a uso normal e passam por desenho; a regra entra quando a soma ou a repetição aparece.
+
+Dos Pix de clientes bons, 90,0% passaram direto, 10,0% pediram 2FA e nenhum foi rejeitado; no uso do dia a dia, 99% passam direto. Latência do motor: p50 de 26 ms e p99 de 38 ms. Com outra semente e o dobro de clientes (`--seed 7 --customers 300`), os números se mantêm: 89,5% dos clientes bons aprovados direto e 1 rejeitado em 902.
 
 Os Pix bons de quem estava sendo atacado no mesmo dia ficam fora dessa conta, numa linha própria da saída: o motor tem motivo para desconfiar deles.
 
 O que sobra aprovado na fraude é o começo de cada padrão. Os primeiros pedaços de um fracionamento ou de uma drenagem noturna, e os três primeiros Pix de um robô, são iguais a uso normal; a regra só enxerga a partir da soma ou da repetição. A drenagem noturna deixa passar por desenho até R$ 3.000 por noite. Dos seis laranjas da cadeia, só dois chegaram a receber dinheiro (as outras vítimas foram barradas no primeiro elo), e os dois foram barrados ao repassar; quem pagou a conta central depois foi barrado pelo `MULE_LINK`.
 
 A fricção dos clientes bons se concentra em dois lugares. O Pix alto de cliente sem histórico pede 2FA por decisão de política. A folha paga Pix a Pix pelo app pede 2FA a partir do 4º funcionário, por velocidade; como o motor não recebe o resultado do 2FA, esses Pix nunca viram "aprovados" e a relação com o funcionário não ganha o bônus de confiança no mês seguinte. A vaquinha era o falso positivo mais caro até a v6: quem recebe dos amigos e repassa tudo para a pousada somava `MULE_PASS_THROUGH` (+25) com `PROFILE_AMOUNT_SPIKE` (até +35), as duas medindo a mesma estranheza, e uma em cada seis era rejeitada. Na v7 o pico de valor não conta quando o repasse fraco dispara. Sobra um caso: com 6 amigos, o 6º Pix de entrada pode somar fan-in (+35) e pico de valor (+20) e chegar a 55, e aí o repasse passa a contar como dinheiro suspeito (+60). Foi o único cliente bom rejeitado na rodada de 300 clientes.
+
+**Premissa.** A abertura de conta é validada por outra API, com reconhecimento facial: o motor parte do princípio de que o titular é quem diz ser. Por isso a conta aberta com documento roubado, que o `simulate.py` ainda gera, fica fora da tabela. O risco que sobra é o titular vender ou alugar a conta para o golpe, e esse é tratado pelas regras de destino (conta nova, `MULE_PASS_THROUGH` e `MULE_LINK`).
 
 **Limites honestos.** Os rótulos de fraude são do próprio script: isso mede a coerência da política contra ataques conhecidos, não precisão real. Para medir precisão e recall seria preciso fraude confirmada em produção e o resultado dos desafios 2FA, que o enunciado não fornece. Com esses dados, os próximos passos seriam medir a taxa de falso positivo por regra (a tabela `pix_analysis_rule_hit` já permite) e ajustar pesos por segmento (cliente novo vs. recorrente).
 

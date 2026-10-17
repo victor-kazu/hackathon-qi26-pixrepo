@@ -202,4 +202,4 @@ sequenceDiagram
 >   - **Tabela de decisão fixa:** regra dura, depois destino ≥ 60, depois total ≥ 90, que rejeitam; depois total ≥ 40, que pede 2FA.
 >   - **Régua por maturidade:** as regras duras olham quem paga. Conta nova é barrada no 5º Pix em 5 minutos e com 3 pagadores no aparelho; conta com 180 dias e histórico aprovado pede 2FA e só é barrada em volumes que nenhum uso humano explica.
 >   - **Conta própria comprovada:** o mesmo CPF só vale como transferência entre contas próprias se a conta de destino é antiga ou já conhecida.
->   - **Calibragem medida:** cada número saiu da simulação. Com a semente 42: 70% dos Pix de fraude e 82% do valor fraudado contidos, 90% dos clientes bons aprovados direto e nenhum rejeitado, com latência p99 de 38 ms.
+>   - **Calibragem medida:** cada número saiu da simulação. Com a semente 42: 90% dos clientes bons aprovados direto e nenhum rejeitado, com latência p99 de 38 ms.

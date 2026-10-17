@@ -1,6 +1,5 @@
 from sqlalchemy import Column, DateTime, Integer, String, UniqueConstraint, func
 
-from engine.policy import APPROVED, REJECTED, TWO_FACTOR_REQUIRED
 from models.base import Base
 
 
@@ -13,6 +12,7 @@ class PixAnalysisStatus(Base):
 
     __table_args__ = (UniqueConstraint("enumerator"),)
 
-    APPROVED = APPROVED
-    TWO_FACTOR_REQUIRED = TWO_FACTOR_REQUIRED
-    REJECTED = REJECTED
+    # Os mesmos textos da policy do motor e das linhas do database.sql.
+    APPROVED = "approved"
+    TWO_FACTOR_REQUIRED = "two_factor_required"
+    REJECTED = "rejected"

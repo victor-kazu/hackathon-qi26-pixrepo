@@ -1,12 +1,12 @@
 from datetime import datetime, timedelta, timezone
 from time import perf_counter
-from typing import Tuple
+from typing import Optional, Tuple
 
 from controllers.base_controller import BaseController
+from controllers.fraud_engine import parameters as p
+from controllers.fraud_engine.policy import REJECTED, decide
+from controllers.fraud_engine.signals import History, PreviousLocation, TransactionFacts, build_signals
 from dtos import PixAnalysisDTO
-from engine import parameters as p
-from engine.policy import REJECTED, decide
-from engine.signals import History, TransactionFacts, build_signals
 from errors import (
     AccountOpenedAfterTransaction,
     FutureTransactionDate,
@@ -128,9 +128,7 @@ class PixTransactionController(BaseController):
             ip_distinct_documents=repository.count_distinct_documents_by_ip(
                 facts, timedelta(hours=p.IP_WINDOW_HOURS)
             ),
-            previous_location=repository.get_previous_location(
-                facts, timedelta(hours=p.IMPOSSIBLE_TRAVEL_LOOKBACK_HOURS)
-            ),
+            previous_location=self._previous_location(facts),
             destination_distinct_payers=repository.count_destination_distinct_payers(
                 facts, timedelta(hours=p.FAN_IN_WINDOW_HOURS)
             ),
@@ -138,6 +136,15 @@ class PixTransactionController(BaseController):
                 facts, timedelta(days=p.FLAGGED_DESTINATION_WINDOW_DAYS), p.REJECT_BENEFICIARY_SCORE
             ),
         )
+
+    def _previous_location(self, facts: TransactionFacts) -> Optional[PreviousLocation]:
+        row = self.pix_transaction_repository.get_previous_location(
+            facts, timedelta(hours=p.IMPOSSIBLE_TRAVEL_LOOKBACK_HOURS)
+        )
+        if row is None:
+            return None
+
+        return PreviousLocation(float(row.latitude), float(row.longitude), row.transaction_date, row.device_id)
 
     def _to_facts(self, payload: dict) -> TransactionFacts:
         """Confere o que o schema não sabe conferir e normaliza o Pix.

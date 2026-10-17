@@ -1,7 +1,7 @@
 """As regras antifraude. Cada uma lê os sinais e diz se disparou.
 
 Toda regra pertence a uma de duas categorias, e a categoria importa
-para a decisão (veja engine/policy.py):
+para a decisão (veja fraud_engine/policy.py):
 
   IDENTITY     "é mesmo o cliente quem está pagando?" O 2FA resolve.
   BENEFICIARY  "para onde vai esse dinheiro?" O 2FA NÃO resolve: no
@@ -14,8 +14,8 @@ bônus de confiança são pontos negativos.
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Tuple
 
-from engine import parameters as p
-from engine.signals import Signals
+from controllers.fraud_engine import parameters as p
+from controllers.fraud_engine.signals import Signals
 
 IDENTITY = "identity"
 BENEFICIARY = "beneficiary"

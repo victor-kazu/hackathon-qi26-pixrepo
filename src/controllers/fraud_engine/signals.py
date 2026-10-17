@@ -12,7 +12,7 @@ from math import asin, cos, radians, sin, sqrt
 from statistics import median
 from typing import List, Optional
 
-from engine import parameters
+from controllers.fraud_engine import parameters
 
 CPF_LENGTH = 11
 EARTH_RADIUS_KM = 6371.0

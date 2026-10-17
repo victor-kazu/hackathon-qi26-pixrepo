@@ -16,9 +16,9 @@ paga. Quando o problema é o destino, pedir 2FA só atrasa a vítima.
 from dataclasses import dataclass
 from typing import List
 
-from engine import parameters as p
-from engine.rules import BENEFICIARY, IDENTITY, RuleHit, evaluate_rules
-from engine.signals import Signals
+from controllers.fraud_engine import parameters as p
+from controllers.fraud_engine.rules import BENEFICIARY, IDENTITY, RuleHit, evaluate_rules
+from controllers.fraud_engine.signals import Signals
 
 APPROVED = "approved"
 TWO_FACTOR_REQUIRED = "two_factor_required"

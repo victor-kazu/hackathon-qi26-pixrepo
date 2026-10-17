@@ -1,9 +1,9 @@
 from datetime import timedelta
 
-from engine import parameters as p
-from engine.policy import APPROVED, REJECTED, TWO_FACTOR_REQUIRED, decide
-from engine.signals import History
-from tests.unit.engine.factory import NOW, make_signals
+from controllers.fraud_engine import parameters as p
+from controllers.fraud_engine.policy import APPROVED, REJECTED, TWO_FACTOR_REQUIRED, decide
+from controllers.fraud_engine.signals import History
+from tests.unit.fraud_engine.factory import NOW, make_signals
 
 
 class TestDecision:

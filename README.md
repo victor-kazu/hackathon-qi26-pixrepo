@@ -1,6 +1,6 @@
 # Grupo 3
 
-**Integrantes:** Victor Kazunori e Matheus Reis
+**Integrantes:** [nomes]
 
 Motor antifraude de Pix: uma API que recebe um Pix, compara com o histórico de quem paga, de quem recebe e do aparelho, e decide em poucos milissegundos se ele sai (`approved`), se o cliente precisa confirmar que é ele (`two_factor_required`) ou se é bloqueado (`rejected`). Toda decisão sai com o motivo, as regras acionadas e os sinais que as acionaram.
 
@@ -32,15 +32,15 @@ controller ── valida o conteúdo (CPF/CNPJ, datas)  ── mesmo id já anal
    ├──► repository ── 16 consultas de histórico, todas "até a data deste Pix"
    │                  (pagador, destino, par pagador→destino, aparelho, IP)
    ▼
-engine/signals.py ── monta os sinais (idade das contas, hora local, mediana, velocidade geográfica...)
-engine/rules.py   ── 25 regras: 6 duras, 17 de pontos, 2 bônus de confiança
-engine/policy.py  ── soma identidade e destino separadamente e decide
+controllers/fraud_engine/signals.py ── monta os sinais (idade das contas, hora local, mediana, velocidade geográfica...)
+controllers/fraud_engine/rules.py   ── 25 regras: 6 duras, 17 de pontos, 2 bônus de confiança
+controllers/fraud_engine/policy.py  ── soma identidade e destino separadamente e decide
    │
    ▼
 grava pix_transaction + pix_analysis + uma linha por regra acionada ── commit ── responde
 ```
 
-O pacote `engine/` é Python puro: não conhece banco nem HTTP. É isso que permite testar cada regra em unidade, em milissegundos, e reproduzir uma decisão a partir da metadata gravada.
+O motor segue o Base Service: é regra de negócio, então mora na camada de controllers, em `src/controllers/fraud_engine/`. O controller busca o histórico pelo repository, entrega ao motor e grava o que ele decidiu. O motor é Python puro: não conhece banco nem HTTP. É isso que permite testar cada regra em unidade, em milissegundos, e reproduzir uma decisão a partir da metadata gravada.
 
 Princípios que guiaram as regras:
 
@@ -53,7 +53,7 @@ Princípios que guiaram as regras:
 
 ## Regras
 
-Valores em reais; no código ficam em centavos, em `src/engine/parameters.py`, cada um com o porquê ao lado. Janelas sempre terminam no `transaction_date` do Pix analisado.
+Valores em reais; no código ficam em centavos, em `src/controllers/fraud_engine/parameters.py`, cada um com o porquê ao lado. Janelas sempre terminam no `transaction_date` do Pix analisado.
 
 ### Regras duras (rejeitam sozinhas)
 
@@ -259,14 +259,14 @@ curl http://localhost:3000/pix/transaction/pix-000123 -H "INTERNAL-TOKEN: defaul
 
 ```
 src/
-  engine/          o motor: parameters.py (números e porquês), signals.py, rules.py, policy.py
   controllers/     pix_transaction_controller.py: valida, coleta histórico, decide, grava
+    fraud_engine/  o motor: parameters.py (números e porquês), signals.py, rules.py, policy.py
   repositories/    pix_transaction_repository.py: as consultas de janela
   resources/       pix_transaction.py: as duas rotas
   models/ dtos/ schemas/ errors/ middlewares/   camadas do Base Service
 database/database.sql
 scripts/simulate.py
-tests/unit/engine/                 regras e política, sem banco
+tests/unit/fraud_engine/           regras e política, sem banco
 tests/integration/pix_transaction/ contrato e cenários de fraude pela API
 docs/                              guia original do Base Service
 ```

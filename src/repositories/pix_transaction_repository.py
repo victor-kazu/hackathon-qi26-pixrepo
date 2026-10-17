@@ -1,13 +1,17 @@
 from datetime import datetime, timedelta
-from typing import List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 from uuid import uuid4
 
 from sqlalchemy import and_, func, text
 
 from database import Context
-from engine.policy import Decision
-from engine.signals import PreviousLocation, TransactionFacts
 from models import PixAnalysis, PixAnalysisRuleHit, PixAnalysisStatus, PixTransaction
+
+# Só para as anotações de tipo: em tempo de execução o repository não
+# depende do controller (que é quem depende dele).
+if TYPE_CHECKING:
+    from controllers.fraud_engine.policy import Decision
+    from controllers.fraud_engine.signals import TransactionFacts
 
 # Status que podem ter tirado dinheiro da conta. O 2FA entra porque o
 # motor não fica sabendo se o cliente confirmou: para teto e exposição,
@@ -32,7 +36,7 @@ class PixTransactionRepository:
 
     # ─── Escrita ────────────────────────────────────────────────────
 
-    def lock_source_account(self, facts: TransactionFacts) -> None:
+    def lock_source_account(self, facts: "TransactionFacts") -> None:
         """Serializa os Pix da mesma conta pagadora até o commit.
 
         Sem isso, cinco Pix simultâneos da mesma conta leriam o mesmo
@@ -44,9 +48,9 @@ class PixTransactionRepository:
 
     def create(
         self,
-        facts: TransactionFacts,
+        facts: "TransactionFacts",
         raw_payload: dict,
-        decision: Decision,
+        decision: "Decision",
         analysis_metadata: dict,
         processing_time_ms: float,
     ) -> PixAnalysis:
@@ -110,19 +114,19 @@ class PixTransactionRepository:
 
     # ─── Histórico do pagador ───────────────────────────────────────
 
-    def count_source_approved(self, facts: TransactionFacts) -> int:
+    def count_source_approved(self, facts: "TransactionFacts") -> int:
         query = self._source_query(facts, None, [PixAnalysisStatus.APPROVED])
         return query.with_entities(func.count(PixTransaction.id)).scalar()
 
-    def count_source_attempts(self, facts: TransactionFacts, window: timedelta, statuses: List[str] = None) -> int:
+    def count_source_attempts(self, facts: "TransactionFacts", window: timedelta, statuses: List[str] = None) -> int:
         query = self._source_query(facts, window, statuses)
         return query.with_entities(func.count(PixTransaction.id)).scalar()
 
-    def count_source_same_amount(self, facts: TransactionFacts, window: timedelta) -> int:
+    def count_source_same_amount(self, facts: "TransactionFacts", window: timedelta) -> int:
         query = self._source_query(facts, window).filter(PixTransaction.amount == facts.amount)
         return query.with_entities(func.count(PixTransaction.id)).scalar()
 
-    def list_source_approved_amounts(self, facts: TransactionFacts, window: timedelta) -> List[int]:
+    def list_source_approved_amounts(self, facts: "TransactionFacts", window: timedelta) -> List[int]:
         query = (
             self._source_query(facts, window, [PixAnalysisStatus.APPROVED])
             .with_entities(PixTransaction.amount)
@@ -131,7 +135,7 @@ class PixTransactionRepository:
         )
         return [row.amount for row in query.all()]
 
-    def sum_source_amounts(self, facts: TransactionFacts, window: timedelta, device_id: str = None) -> int:
+    def sum_source_amounts(self, facts: "TransactionFacts", window: timedelta, device_id: str = None) -> int:
         query = self._source_query(facts, window, MONEY_OUT_STATUSES)
         if device_id is not None:
             query = query.filter(PixTransaction.device_id == device_id)
@@ -139,7 +143,7 @@ class PixTransactionRepository:
         # SUM de BIGINT volta NUMERIC (Decimal) do Postgres; o motor trabalha em centavos inteiros.
         return int(query.with_entities(func.coalesce(func.sum(PixTransaction.amount), 0)).scalar())
 
-    def get_destination_recent_stats(self, facts: TransactionFacts, window: timedelta) -> Tuple[int, int]:
+    def get_destination_recent_stats(self, facts: "TransactionFacts", window: timedelta) -> Tuple[int, int]:
         """Quantos Pix e quanto dinheiro saíram desta conta para este destino na janela."""
         query = self._source_query(facts, window, MONEY_OUT_STATUSES).filter(self._destination_filter(facts))
         count, total = query.with_entities(
@@ -147,14 +151,14 @@ class PixTransactionRepository:
         ).one()
         return count, int(total)
 
-    def get_counterparty_stats(self, facts: TransactionFacts) -> Tuple[int, Optional[datetime]]:
+    def get_counterparty_stats(self, facts: "TransactionFacts") -> Tuple[int, Optional[datetime]]:
         query = self._source_query(facts, None, [PixAnalysisStatus.APPROVED]).filter(self._destination_filter(facts))
         count, first_date = query.with_entities(
             func.count(PixTransaction.id), func.min(PixTransaction.transaction_date)
         ).one()
         return count, first_date
 
-    def is_device_trusted(self, facts: TransactionFacts, maturation: timedelta) -> bool:
+    def is_device_trusted(self, facts: "TransactionFacts", maturation: timedelta) -> bool:
         query = (
             self._source_query(facts, None, [PixAnalysisStatus.APPROVED])
             .filter(PixTransaction.device_id == facts.device_id)
@@ -162,8 +166,9 @@ class PixTransactionRepository:
         )
         return query.with_entities(PixTransaction.id).first() is not None
 
-    def get_previous_location(self, facts: TransactionFacts, window: timedelta) -> Optional[PreviousLocation]:
-        row = (
+    def get_previous_location(self, facts: "TransactionFacts", window: timedelta):
+        """O último Pix com GPS desta conta na janela (latitude, longitude, data, aparelho), ou None."""
+        return (
             self._source_query(facts, window)
             .filter(PixTransaction.latitude.isnot(None), PixTransaction.longitude.isnot(None))
             .with_entities(
@@ -175,14 +180,10 @@ class PixTransactionRepository:
             .order_by(PixTransaction.transaction_date.desc())
             .first()
         )
-        if row is None:
-            return None
-
-        return PreviousLocation(float(row.latitude), float(row.longitude), row.transaction_date, row.device_id)
 
     # ─── Aparelho e rede ────────────────────────────────────────────
 
-    def count_distinct_documents_by_device(self, facts: TransactionFacts, window: timedelta) -> int:
+    def count_distinct_documents_by_device(self, facts: "TransactionFacts", window: timedelta) -> int:
         """Quantos pagadores distintos usaram este aparelho, contando o atual."""
         query = self.session.query(func.count(func.distinct(PixTransaction.source_document_number))).filter(
             PixTransaction.device_id == facts.device_id,
@@ -191,7 +192,7 @@ class PixTransactionRepository:
         )
         return query.scalar() + 1
 
-    def count_distinct_documents_by_ip(self, facts: TransactionFacts, window: timedelta) -> int:
+    def count_distinct_documents_by_ip(self, facts: "TransactionFacts", window: timedelta) -> int:
         query = self.session.query(func.count(func.distinct(PixTransaction.source_document_number))).filter(
             PixTransaction.ip == facts.ip,
             PixTransaction.source_document_number != facts.source_document_number,
@@ -201,7 +202,7 @@ class PixTransactionRepository:
 
     # ─── Histórico do destino ───────────────────────────────────────
 
-    def count_destination_distinct_payers(self, facts: TransactionFacts, window: timedelta) -> int:
+    def count_destination_distinct_payers(self, facts: "TransactionFacts", window: timedelta) -> int:
         """Quantos pagadores distintos mandaram Pix para este destino, contando o atual."""
         query = self.session.query(func.count(func.distinct(PixTransaction.source_document_number))).filter(
             self._destination_filter(facts),
@@ -210,7 +211,7 @@ class PixTransactionRepository:
         )
         return query.scalar() + 1
 
-    def count_destination_flagged_payers(self, facts: TransactionFacts, window: timedelta, min_beneficiary_score: int) -> int:
+    def count_destination_flagged_payers(self, facts: "TransactionFacts", window: timedelta, min_beneficiary_score: int) -> int:
         """Outros pagadores que tiveram Pix para este destino rejeitado por causa do destino."""
         query = (
             self.session.query(func.count(func.distinct(PixTransaction.source_document_number)))
@@ -228,7 +229,7 @@ class PixTransactionRepository:
 
     # ─── Filtros ────────────────────────────────────────────────────
 
-    def _source_query(self, facts: TransactionFacts, window: Optional[timedelta], statuses: List[str] = None):
+    def _source_query(self, facts: "TransactionFacts", window: Optional[timedelta], statuses: List[str] = None):
         query = self.session.query(PixTransaction).filter(
             PixTransaction.source_branch == facts.source_branch,
             PixTransaction.source_account_number == facts.source_account_number,
@@ -241,14 +242,14 @@ class PixTransactionRepository:
 
         return query
 
-    def _destination_filter(self, facts: TransactionFacts):
+    def _destination_filter(self, facts: "TransactionFacts"):
         return and_(
             PixTransaction.destination_participant == facts.destination_participant,
             PixTransaction.destination_branch == facts.destination_branch,
             PixTransaction.destination_account_number == facts.destination_account_number,
         )
 
-    def _window_filter(self, facts: TransactionFacts, window: Optional[timedelta]) -> list:
+    def _window_filter(self, facts: "TransactionFacts", window: Optional[timedelta]) -> list:
         filters = [PixTransaction.transaction_date <= facts.transaction_date]
         if window is not None:
             filters.append(PixTransaction.transaction_date > facts.transaction_date - window)

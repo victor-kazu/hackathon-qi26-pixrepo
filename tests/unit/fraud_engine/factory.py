@@ -1,7 +1,7 @@
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
-from engine.signals import History, TransactionFacts, build_signals
+from controllers.fraud_engine.signals import History, TransactionFacts, build_signals
 
 BRASILIA = timezone(timedelta(hours=-3))
 NOW = datetime(2026, 10, 17, 14, 0, tzinfo=BRASILIA)

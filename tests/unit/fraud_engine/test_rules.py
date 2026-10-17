@@ -1,9 +1,9 @@
 from datetime import timedelta
 
-from engine import parameters as p
-from engine.rules import evaluate_rules
-from engine.signals import History, PreviousLocation
-from tests.unit.engine.factory import NOW, make_signals
+from controllers.fraud_engine import parameters as p
+from controllers.fraud_engine.rules import evaluate_rules
+from controllers.fraud_engine.signals import History, PreviousLocation
+from tests.unit.fraud_engine.factory import NOW, make_signals
 
 
 def rule_codes(signals) -> list:

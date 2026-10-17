@@ -317,4 +317,5 @@ scripts/simulate.py
 tests/unit/fraud_engine/           regras e política, sem banco
 tests/integration/pix_transaction/ contrato e cenários de fraude pela API
 docs/                              guia original do Base Service
+docs/rfc/                          RFC do desenho (rotas, banco, fluxos, principal desafio), em .md e .pdf
 ```

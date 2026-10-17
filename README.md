@@ -1,4 +1,4 @@
-# [Nome do grupo]
+# Grupo 3
 
 **Integrantes:** [nomes]
 
@@ -186,7 +186,7 @@ O que sobra aprovado é estrutural: os primeiros Pix de um robô ou de um fracio
 
 ## Como rodar e testar
 
-Requisitos: Docker e Python 3.11 (o SQLAlchemy 2.0.23 fixado no requirements não roda no Python 3.13).
+Requisitos: Docker e Python 3.11 ou 3.12 para os testes. No Python 3.13 o SQLAlchemy 2.0.23 fixado no requirements não importa.
 
 ```bash
 # 1. Sobe a API (porta 3000) e o PostgreSQL (porta 5432)

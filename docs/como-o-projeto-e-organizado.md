@@ -1,3 +1,5 @@
+> Guia do **Base Service** original, mantido como referência das camadas e convenções. O exemplo `sample_entity` citado aqui foi removido e deu lugar ao domínio `pix_transaction`; o README da raiz descreve o motor antifraude.
+
 # Como o projeto é organizado
 
 Dentro de `src/` tem dez pastas. Para um programa que responde oito

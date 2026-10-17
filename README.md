@@ -1,694 +1,248 @@
-# Bootcamp QI Tech — projeto base da API
+# [Nome do grupo]
 
-Projeto base do Bootcamp: uma API REST em **Python + FastAPI**, com banco
-**PostgreSQL**, rodando em **Docker**.
+**Integrantes:** [nomes]
 
-Você não precisa saber programar para começar. A API e o banco sobem
-no **Docker**, então você não instala nem um nem outro na sua máquina.
-Os **testes** rodam no seu Python — são dois comandos, e a seção 2
-mostra os dois.
+Motor antifraude de Pix: uma API que recebe um Pix, compara com o histórico de quem paga, de quem recebe e do aparelho, e decide em poucos milissegundos se ele sai (`approved`), se o cliente precisa confirmar que é ele (`two_factor_required`) ou se é bloqueado (`rejected`). Toda decisão sai com o motivo, as regras acionadas e os sinais que as acionaram.
 
----
+## A ideia central: o 2FA só resolve metade das fraudes
 
-## 0. O que você precisa ter instalado
+O 2FA prova que **quem está no app é o dono da conta**. Ele protege contra **tomada de conta**: celular roubado, golpista logado em outro aparelho, sessão clonada.
 
-São três coisas.
+Ele **não** protege contra **golpe de engenharia social** (falso parente, falsa central, falso vendedor) nem contra **coação**. Nesses casos quem faz o Pix é a própria vítima, com o próprio celular, e ela passa no 2FA sem pensar duas vezes. Pedir 2FA aí é fricção que não protege ninguém.
 
-| O quê | Para quê | Como conferir |
-|---|---|---|
-| **Docker** (com o Docker Desktop no Mac/Windows) | roda a API e o banco | `docker compose version` |
-| **Git** | trazer o projeto para o seu computador | `git --version` |
-| **Python 3.11 ou mais novo** | rodar os testes (seção 2) | `python3 --version` |
+Por isso o motor mede o risco em duas dimensões separadas, e cada uma leva a uma decisão diferente:
 
-Abra o terminal e rode os três comandos da coluna da direita. Se todos
-responderem um número de versão, você está pronto.
+| Dimensão | Pergunta | Exemplos de sinal | Quando está alta |
+|---|---|---|---|
+| **Identidade** | É mesmo o cliente quem está pagando? | aparelho novo, viagem impossível, horário noturno, rajada de tentativas | pede **2FA** |
+| **Destino** | Para onde vai esse dinheiro? | conta destino recém-aberta, funil de vários pagadores, destino já barrado, valor fora do padrão | **rejeita**, porque o 2FA não ajudaria |
 
-> **Por que o Python, se tudo roda no Docker?** Porque os testes rodam
-> FORA dele, na sua máquina, contra a API que está de pé no container.
-> O ganho é o ciclo: você salva um teste e roda na hora, sem esperar
-> imagem nenhuma ser montada. O preço está explicado na seção 2.
-
-> **`docker compose version` deu erro?** Sua instalação do Docker é
-> antiga demais (ou o Docker não está ligado). No Mac e no Windows,
-> abra o **Docker Desktop** e espere a baleia parar de se mexer. Se o
-> comando continuar falhando, reinstale pelo site oficial —
-> o `docker compose` (com **espaço**) vem junto desde 2022.
-
-Nada além destes três. Se em algum momento este projeto pedir que você
-instale outro PROGRAMA, é um bug do projeto — avise a gente. (As
-bibliotecas Python que os testes usam são outra conversa: elas entram
-com um `pip install` na seção 2, dentro de uma pasta do próprio
-projeto, e somem quando você apaga essa pasta.)
-
----
-
-## 1. Rodando pela primeira vez
-
-```bash
-docker compose up
-```
-
-Um comando. Só isso, e não precisa criar nem copiar arquivo nenhum
-antes: as configurações já vêm com valor padrão dentro do
-`docker-compose.yml`.
-
-O Docker baixa o Python, sobe o banco, cria as tabelas e liga a API. Na
-primeira vez demora alguns minutos; depois é quase instantâneo.
-
-São duas coisas de pé, e vale saber o nome de cada uma:
-
-| Serviço | O que é |
-|---|---|
-| `api` | a API que responde às suas requisições |
-| `db` | o banco de dados (PostgreSQL) |
-
-Quando aparecer `Application startup complete`, a API está no ar. Abra
-no navegador:
-
-### 👉 http://localhost:3000
-
-Você vai ver isto:
-
-```json
-{"service":"bootcamp-api","id":"8"}
-```
-
-Pouca coisa, e de propósito: essa rota só diz "estou viva, e eu sou este
-serviço". Mas você acabou de fazer uma **requisição HTTP** — a mesma
-coisa que o navegador faz ao abrir qualquer site.
-
-### Agora as outras rotas
-
-Elas não abrem no navegador, porque exigem um cabeçalho: o
-`INTERNAL-TOKEN`, que é a senha da API (seção 6). Para mandar um
-cabeçalho a gente usa o `curl`, um programa de linha de comando que já
-vem instalado no Mac, no Linux e no Windows.
-
-**Abra um segundo terminal** — o primeiro está ocupado rodando a API — e
-cole um comando de cada vez.
-
-> **No Windows**, use o **Git Bash**: ele veio junto com o Git da seção
-> 0. No PowerShell estes comandos não funcionam, porque lá `curl` é o
-> apelido de outro programa, com outra sintaxe.
-
-#### 1. Criar uma entidade
-
-```bash
-curl -X POST http://localhost:3000/sample_entity \
-  -H "INTERNAL-TOKEN: default_token" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "hello": "world",
-    "name": "Maria da Silva",
-    "email": "maria.silva@exemplo.com.br",
-    "document_number": "529.982.247-25",
-    "birthdate": "1990-05-17"
-  }'
-```
-
-```json
-{"sample_entity_key":"3fbf83e9-e5fc-4e0f-8427-db6a1a50f964"}
-```
-
-Esse `sample_entity_key` é o endereço da entidade que você acabou de
-criar. **Copie o seu** — ele nasce diferente a cada vez, e nos comandos
-abaixo você troca o que está escrito aqui pelo seu.
-
-> **Rodou o comando duas vezes e levou 409 na segunda?** É de propósito:
-> o CPF e o e-mail não podem se repetir. Para criar uma segunda
-> entidade, troque o e-mail (qualquer um serve) e o CPF — mas o CPF tem
-> que ser **válido de verdade**, com os dois dígitos finais batendo com
-> a conta. O `529.982.247-25` acima é um CPF de teste conhecido, que
-> passa na conta e não pertence a ninguém.
->
-> **E os cinco campos são todos obrigatórios?** São. Mande `{}` e a API
-> diz qual está faltando — é o comando 6 lá embaixo.
-
-#### 2. Buscar a entidade
-
-```bash
-curl http://localhost:3000/sample_entity/3fbf83e9-e5fc-4e0f-8427-db6a1a50f964 \
-  -H "INTERNAL-TOKEN: default_token"
-```
-
-```json
-{"hello":"world","sample_entity_key":"3fbf83e9-e5fc-4e0f-8427-db6a1a50f964","name":"Maria da Silva","email":"maria.silva@exemplo.com.br","document_number":"529.982.247-25","birthdate":"1990-05-17","status":"pending","counter":0,"status_events":[{"status":"pending","event_datetime":"2026-09-11T20:36:43.104210"}]}
-```
-
-Você mandou cinco campos e voltaram nove. Os quatro extras a API montou
-sozinha:
-
-- **`sample_entity_key`** — o endereço da entidade;
-- **`status`** — o estado inicial, `pending`;
-- **`counter`** — um contador zerado;
-- **`status_events`** — a **história**. Cada vez que o status muda, uma
-  linha nova entra aqui, com a hora. Saber onde a entidade está é uma
-  coisa; saber por onde ela passou é outra, e é essa lista que responde
-  a segunda.
-
-#### 3. Listar as entidades
-
-```bash
-curl http://localhost:3000/sample_entities \
-  -H "INTERNAL-TOKEN: default_token"
-```
-
-```json
-{"data":[{"hello":"world","sample_entity_key":"3fbf83e9-e5fc-4e0f-8427-db6a1a50f964","name":"Maria da Silva","email":"maria.silva@exemplo.com.br","document_number":"529.982.247-25","birthdate":"1990-05-17","status":"pending","counter":0}],"limit":10,"page":0,"is_last_page":true}
-```
-
-Vêm de dez em dez, da mais nova para a mais antiga. Para pedir outra
-quantidade ou outra página, acrescente `?limit=2&page=0` ao endereço —
-o `limit` vai até **100**. O `is_last_page` já responde a pergunta
-seguinte — "tem mais?" — sem custar uma segunda requisição.
-
-Repare no que **não** veio: o `status_events`. Na lista cada item vem
-resumido, porque montar a história de cada entidade custa uma consulta a
-mais por item — numa página de 100, são 100 consultas para uma
-informação que quem está varrendo não pediu. A história aparece quando
-você abre UMA entidade, no comando 2.
-
-Também dá para **filtrar**. Todos os filtros se combinam, e todos são
-opcionais:
-
-```bash
-curl "http://localhost:3000/sample_entities?name=maria&status=pending&status=failed" \
-  -H "INTERNAL-TOKEN: default_token"
-```
-
-| Filtro | Como casa |
-|---|---|
-| `name` | por **pedaço**, ignorando maiúscula/minúscula |
-| `email` | exato |
-| `document_number` | exato |
-| `birthdate_from` / `birthdate_to` | intervalo, **incluindo** as duas pontas |
-| `status` | pode repetir: `?status=pending&status=failed` traz os dois |
-
-Repare que `status` se comporta ao contrário dos outros: `name` junto
-com `email` **estreita** a busca (os dois precisam bater), mas dois
-`status` **alargam** (basta um bater). Faz sentido pelo que a pessoa
-quer dizer — "me mostra o que deu errado e o que deu certo" é um pedido
-legítimo, e uma entidade só pode estar num dos baldes.
-
-#### 4. Somar 1 no contador
-
-```bash
-curl -i -X PUT http://localhost:3000/webhook/sample_entity/3fbf83e9-e5fc-4e0f-8427-db6a1a50f964/increment_counter \
-  -H "INTERNAL-TOKEN: default_token"
-```
+## Como o motor de decisão funciona
 
 ```
-HTTP/1.1 204 No Content
+POST /pix/transaction
+   │
+   ▼
+resource ── valida o formato (JSON Schema)
+   │
+   ▼
+controller ── valida o conteúdo (CPF/CNPJ, datas)  ── mesmo id já analisado? devolve a mesma análise
+   │          trava a conta pagadora (lock por conta)
+   │
+   ├──► repository ── 15 consultas de histórico, todas "até a data deste Pix"
+   │                  (pagador, destino, par pagador→destino, aparelho, IP)
+   ▼
+engine/signals.py ── monta os sinais (idade das contas, hora local, mediana, velocidade geográfica...)
+engine/rules.py   ── 23 regras: 6 duras, 15 de pontos, 2 bônus de confiança
+engine/policy.py  ── soma identidade e destino separadamente e decide
+   │
+   ▼
+grava pix_transaction + pix_analysis + uma linha por regra acionada ── commit ── responde
 ```
 
-Esta rota não responde nada — por isso o `-i`, que manda o `curl`
-mostrar também o **status** da resposta. `204` quer dizer "deu certo e
-não tenho nada a dizer". Repita o comando 2: o `counter` agora é `1`.
-
-#### 5. Mudar o status
-
-```bash
-curl -X PUT http://localhost:3000/sample_entity/3fbf83e9-e5fc-4e0f-8427-db6a1a50f964 \
-  -H "INTERNAL-TOKEN: default_token" \
-  -H "Content-Type: application/json" \
-  -d '{"status": "success"}'
-```
-
-```json
-{"sample_entity_key":"3fbf83e9-e5fc-4e0f-8427-db6a1a50f964"}
-```
-
-Repita o comando 2: o `status` virou `success`. E rode este comando 5
-mais uma vez — agora a API recusa:
-
-```json
-{"title":"Entity cannot change status","description":"Entity with status success cannot update to success.","translation":"Essa entidade não pode ser atualizada.","code":"QIT001002"}
-```
-
-Isso é uma **regra de negócio**, não um erro de digitação: entidade que
-já terminou não volta atrás. A frase que decide isso mora em
-`src/controllers/sample_entity_controller.py`, e você pode ir ler.
-
-#### 6. Mandar um JSON torto
-
-```bash
-curl -X POST http://localhost:3000/sample_entity \
-  -H "INTERNAL-TOKEN: default_token" \
-  -H "Content-Type: application/json" \
-  -d '{}'
-```
-
-```json
-{"title":"Bad Request","description":"'hello' is a required property","translation":"Payload Inválido","code":"QIT000001"}
-```
-
-**400**, e nada foi criado. O `hello` é obrigatório, e quem recusou não
-foi a regra de negócio: foi o `src/schemas/`, antes da primeira linha da
-rota rodar. Pedido torto não chega a custar uma consulta ao banco.
-
-Repare que ele reclamou de **um** campo, e você deixou cinco de fora. É
-assim mesmo: a validação para no primeiro problema. Tire o `{}` e vá
-preenchendo um campo de cada vez para ver a reclamação andar.
-
-E existe uma fronteira aqui que vale a pena enxergar cedo. Mande um CPF
-com o formato certo e os dígitos errados:
-
-```bash
-curl -X POST http://localhost:3000/sample_entity \
-  -H "INTERNAL-TOKEN: default_token" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "hello": "world",
-    "name": "Maria da Silva",
-    "email": "outra@exemplo.com.br",
-    "document_number": "111.111.111-11",
-    "birthdate": "1990-05-17"
-  }'
-```
-
-```json
-{"title":"Invalid Document Number","description":"The document number 111.111.111-11 is not a valid CPF.","translation":"O CPF informado não é válido.","code":"QIT001003"}
-```
-
-Agora é **422**, não 400. A diferença não é capricho: 400 quer dizer
-"não consegui ler o seu pedido"; 422 quer dizer "li, entendi, e esse
-valor não pode existir". O schema sabe contar pontos e traços — ele não
-sabe fazer a conta dos dois últimos dígitos. Quem sabe é o
-`src/utils/document_number.py`, e por isso essa recusa vem de dentro,
-com código próprio.
-
-#### Esqueceu o `-H "INTERNAL-TOKEN: ..."`?
-
-A API responde **403** e nem chega a olhar o resto:
-
-```json
-{"title":"Forbidden","description":"Request must be internal","translation":"Requisição precisa ser interna","code":"QIT000002"}
-```
-
-#### Toda resposta vem com um número de protocolo
-
-Repare no `-i` deste comando: ele mostra os **cabeçalhos** da resposta,
-não só o corpo.
-
-```bash
-curl -i "http://localhost:3000/sample_entities?limit=1" \
-  -H "INTERNAL-TOKEN: default_token"
-```
-
-```
-HTTP/1.1 200 OK
-content-type: application/json
-x-request-id: 8f3c1e42-1b0d-4f77-9a55-2e4c9d1f0abc
-...
-```
-
-Esse `x-request-id` é o **número de protocolo** da sua requisição: um
-nome único, criado no instante em que ela chegou. Copie o seu e procure
-por ele no log:
-
-```bash
-docker compose logs api | grep 8f3c1e42
-```
-
-```
-[INFO] bootcamp-api.middlewares.request_logger [8f3c1e42-...] - ENTROU GET /sample_entities?limit=1
-[INFO] bootcamp-api.middlewares.request_logger [8f3c1e42-...] - SAIU 200 GET /sample_entities - 2.9 ms
-```
-
-Duas linhas, o mesmo nome nas duas — e nenhuma outra requisição usa esse
-nome. Serve para o dia em que alguém disser "deu erro por volta das
-14h30": sem o número, você abre o log e encontra mil linhas parecidas, de
-mil requisições diferentes, embaralhadas, porque a API atende várias ao
-mesmo tempo e o log é um só. Com o número, achar a agulha é um `grep`.
-
-Se quem chamou já mandar um `x-request-id`, a API **respeita o que veio**
-e usa o mesmo — é assim que se segue um único pedido atravessando vários
-sistemas:
-
-```bash
-curl -i "http://localhost:3000/sample_entities?limit=1" \
-  -H "INTERNAL-TOKEN: default_token" \
-  -H "X-Request-ID: meu-teste-1"
-```
-
-Experimente mandar um valor esquisito nesse cabeçalho — com espaços, ou
-bem comprido. A API não devolve o que você mandou: ela troca por um novo.
-O porquê está em `src/utils/request_context.py`, e é uma das poucas
-lições de segurança que cabem em cinco linhas.
-
-> Só o `/` e o `/health_check` não aparecem no log: o Docker consulta o
-> health check a cada três segundos, e sem essa exceção o log seria
-> quase só isso. Eles ganham o `x-request-id` como todo mundo — o que
-> não ganham é a linha de log.
-
-### Todas as rotas
-
-Sete endereços — este é o mapa inteiro da API:
-
-| Método e rota | O que faz | Responde |
-|---|---|---|
-| `GET /` | diz qual serviço é este | `200` + nome e id |
-| `GET /health_check` | diz se a API está de pé | `204`, sem corpo |
-| `POST /sample_entity` | cria uma entidade | `201` + o `sample_entity_key` |
-| `GET /sample_entity/{key}` | busca uma entidade | `200` + a entidade |
-| `GET /sample_entities` | lista, de dez em dez, com filtros | `200` + a página |
-| `PUT /sample_entity/{key}` | muda o status (`success` ou `failed`) | `202` + o `sample_entity_key` |
-| `PUT /webhook/sample_entity/{key}/increment_counter` | soma 1 no contador | `204`, sem corpo |
-
-As cinco de baixo exigem o `INTERNAL-TOKEN` (seção 6). As duas de cima
-são abertas — a primeira você já usou: foi ela que respondeu no
-navegador.
-
-Os parâmetros da listagem, todos opcionais e combináveis:
-`?limit=` (padrão 10, teto 100) · `?page=` (padrão 0) · `?status=`
-(repetível) · `?name=` · `?email=` · `?document_number=` ·
-`?birthdate_from=` · `?birthdate_to=`. Qualquer outro nome a API
-**recusa** com 400 — é o `src/schemas/get_sample_entities.json` que
-decide, e ele não aceita o que não conhece. Vale a pena errar de
-propósito uma vez:
-
-```bash
-curl "http://localhost:3000/sample_entities?stauts=pending" \
-  -H "INTERNAL-TOKEN: default_token"
-```
-
-Sem essa recusa, um `stauts` com a letra trocada viraria uma lista
-inteira devolvida como se o filtro tivesse funcionado — o pior tipo de
-bug, o que não reclama.
-
-Para desligar tudo: `Ctrl+C` no terminal da API e depois
-
-```bash
-docker compose down
-```
-
----
-
-## 2. Rodando os testes
-
-Os testes rodam **na sua máquina**, contra a API que está de pé no
-Docker. Então são dois passos: um de uma vez só, outro toda vez.
-
-**Uma vez só — instalar as dependências de teste:**
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-dev.txt
-```
-
-O `.venv` é uma pasta com um Python só deste projeto. Ele existe pra que
-instalar algo aqui não mexa no Python da sua máquina — e pra que apagar a
-pasta desfaça tudo. No Windows, a segunda linha é
-`.venv\Scripts\activate`.
-
-**Toda vez — com a API de pé, em outro terminal:**
-
-```bash
-pytest
-```
-
-A API precisa estar respondendo antes. Se você acabou de dar
-`docker compose up`, espere o `(healthy)` aparecer — é o healthcheck do
-`docker-compose.yml` dizendo que a porta já atende. Sem isso, o primeiro
-teste bate numa porta que ainda não responde.
-
-O resultado sai assim:
-
-```
-tests/integration/test_healthcheck.py::TestHealthCheck::test_home PASSED
-...
-============================== 35 passed in 1.54s ==============================
-```
-
-Para rodar só um arquivo (ou só um teste), acrescente o caminho:
-
-```bash
-pytest -v tests/integration/test_healthcheck.py
-```
-
-Os testes leem o seu `.env` sozinhos (é o `tests/conftest.py` que faz
-isso). Trocou a porta da API ali, os testes passam a bater na porta nova
-— você não configura a mesma coisa em dois lugares.
-
-Os testes conversam com a API **por HTTP**, exatamente como um cliente de
-verdade faria. Eles não espiam o código por dentro: nenhum deles importa
-nada de `src/`. Só sabem: "mandei isso, tem que voltar aquilo".
-
-> Uma exceção, e ela é honesta: `tests/utils/db_utils.py` fala com o
-> banco direto, por SQLAlchemy. Mas não para **montar** cenário — só
-> para **zerar** o banco entre testes que não podem se atrapalhar. O
-> cenário continua nascendo pela API, com `POST`.
-
-Isso tem uma consequência bonita: **este projeto inteiro já foi reescrito
-de um framework para outro, e nenhum teste precisou mudar.** Quando o
-teste descreve o combinado em vez de descrever o código, ele sobrevive à
-reforma.
-
-## 3. Quando dá errado
-
-Os tropeços mais comuns, com a mensagem que você vai ver:
-
-### `port is already allocated`
-
-```
-Bind for 0.0.0.0:5432 failed: port is already allocated
-```
-
-Outro programa da sua máquina já usa aquela porta (é comum ter um
-Postgres instalado ocupando a 5432). Não precisa descobrir qual: escolha
-outras portas livres. É pra isto que serve o `.env` —
-
-```bash
-cp .env.example .env
-```
-
-— e, dentro dele, tire o `#` da frente destas duas linhas e troque os
-números:
-
-```
-API_PORT=3001
-DB_PORT=5433
-```
-
-Mexeu no `DB_PORT`? Então mude **também** a porta da `DATABASE_URL`, no
-mesmo arquivo:
-
-```
-DATABASE_URL=postgresql+psycopg2://bootcamp:bootcamp@localhost:5433/bootcamp
-```
-
-São dois lugares porque são dois pontos de vista. O `DB_PORT` diz em
-que porta **da sua máquina** o banco aparece; a `DATABASE_URL` é o
-endereço que os testes usam para chegar nele de fora do Docker. A API
-lá dentro não usa nenhuma das duas — para ela o banco é `db:5432`, e
-por isso essa linha está fixa no `docker-compose.yml`.
-
-Suba de novo. Agora a API atende em http://localhost:3001 — e nos
-comandos `curl` da seção 1 você troca `3000` por `3001`.
-
-### `failed to connect to the docker API`
-
-```
-failed to connect to the docker API at unix:///var/run/docker.sock;
-check if the path is correct and if the daemon is running
-```
-
-O Docker não está ligado. Abra o **Docker Desktop** (Mac/Windows) e
-espere ficar verde. No Linux: `sudo systemctl start docker`.
-
-### `Não consegui falar com a API` / `Não consegui falar com o banco`
-
-Só aparece no atalho local (fora do Docker). Quer dizer que a API ou o
-banco não estão de pé, ou que a porta no seu `.env` não é a que eles
-estão usando. Suba com `docker compose up` e confira as portas.
-
-### `relation "..." does not exist`
-
-```
-psycopg2.errors.UndefinedTable: relation "minha_tabela" does not exist
-```
-
-Você mexeu no `database/database.sql`, e o banco não ficou sabendo.
-Aquele arquivo roda **uma vez só: quando o banco nasce.** Depois disso o
-Postgres nunca mais olha para ele — subir de novo com `docker compose
-up` não adianta, e `docker compose restart db` também não.
-
-Repare no que a mensagem faz com você: ela não diz "seu SQL não rodou",
-diz que a tabela não existe. Você vai reler o seu SQL procurando um erro
-de digitação que não está lá.
-
-Para o banco nascer de novo, já com o schema novo:
-
-```bash
-docker compose down -v
-docker compose up
-```
-
-O `-v` é o que apaga o volume — o disco do banco. **Ele leva junto tudo
-que você tinha criado na mão**, as entidades dos `curl` da seção 1. Não
-tem meio-termo: ou o banco nasce de novo com o schema novo, ou continua
-com o antigo. (Em sistema de verdade é outra história — lá ninguém apaga
-o banco, e a mudança de schema entra por um comando aplicado no deploy.)
-
-### Nada disso resolveu?
-
-Este comando desliga e limpa **este** projeto (containers, rede e o
-banco com tudo dentro) para você recomeçar do zero:
-
-```bash
-docker compose down -v
-docker compose up
-```
-
-Para ver o que a API está dizendo enquanto roda: `docker compose logs -f api`.
-
----
-
-## 4. As pastas
-
-```
-src/
-  app.py           ← liga tudo: rotas, middlewares e tratamento de erro
-  database.py      ← onde a sessão de banco mora (quem cuida do ciclo
-                     dela é middlewares/session_manager.py)
-  constants.py     ← as configurações, lidas do ambiente
-
-  resources/       ← recebe a requisição HTTP e devolve a resposta
-                     (quem liga cada endereço a um resource é o app.py)
-  schemas/         ← o formato do que entra: o JSON do corpo e os
-                     parâmetros do endereço
-  controllers/     ← as regras de negócio: o que pode e o que não pode
-  repositories/    ← as conversas com o banco
-  models/          ← as tabelas, descritas em Python
-  dtos/            ← traduz o objeto do banco no JSON que sai
-  errors/          ← os erros da API, cada um com seu código
-  middlewares/     ← o que acontece com TODA requisição
-  connectors/      ← as conversas com outros serviços
-  utils/           ← as ferramentas que não são de nenhuma camada
-
-database/
-  database.sql     ← as tabelas, em SQL puro
-
-tests/             ← os testes
-```
-
-### Por que tanta pasta?
-
-Porque cada uma tem **um trabalho só**, e só conversa com a vizinha:
-
-```
-requisição → resource → controller → repository → banco
-                 ↑           ↑
-             valida o     decide o
-              formato     que pode
-```
-
-O resource não sabe SQL. O repository não sabe o que é uma regra de
-negócio. Um teste rápido para saber se uma linha está na pasta certa:
-**nenhum `raise` mora em `resources/`** — quem recusa é o schema, antes,
-ou o controller, depois. Confira você mesmo:
-
-```bash
-grep -rn "raise" src/resources/
-```
-
-Não volta nada, e isso é de propósito. Quando você precisa trocar o banco, mexe numa pasta. Quando a
-regra muda, mexe na outra. É isso que permite um time inteiro trabalhar
-no mesmo projeto sem pisar no pé um do outro.
-
----
-
-## 5. Configuração e senhas
-
-Toda configuração entra por **variável de ambiente** — nunca escrita no
-meio do código.
-
-- **valor padrão** → escrito no `docker-compose.yml`, na forma
-  `${VARIAVEL:-padrao}`. É por causa dele que o `docker compose up`
-  funciona sem preparo nenhum.
-- `.env` → **opcional**, fica só na sua máquina e **nunca** vai para o
-  Git. Serve para sobrescrever um padrão (porta ocupada, outro token).
-- `.env.example` → vai para o Git, e é a cópia de onde você parte. Só
-  tem valor de mentirinha.
-
-Essa separação não é frescura. Senha commitada em repositório é uma das
-formas mais comuns de vazamento de dados no mundo real, e não tem
-desfazer: uma vez no histórico, está lá para sempre.
-
-Uma ressalva honesta: valor padrão de senha em arquivo versionado só
-vale porque aqui é um projeto de estudo, sem dado de ninguém. Em
-sistema de verdade, segredo não tem padrão — ele falta, e a aplicação
-se recusa a subir sem ele.
-
-## 6. Autenticação
-
-As rotas de negócio pedem um cabeçalho:
-
-```
-INTERNAL-TOKEN: default_token
-```
-
-Sem ele, a API responde **403**. `default_token` é o valor padrão; para
-trocar, ponha `INTERNAL_TOKEN=outra_coisa` no seu `.env`.
-
-Ficam abertas, de propósito, só duas: a rota raiz e o `/health_check`
-— esta última porque quem a consulta é o próprio Docker, que não tem
-como mandar cabeçalho.
-
----
-
-## 7. Os códigos de erro
-
-Todo erro da API responde no mesmo formato, com um código próprio:
+O pacote `engine/` é Python puro: não conhece banco nem HTTP. É isso que permite testar cada regra em unidade, em milissegundos, e reproduzir uma decisão a partir da metadata gravada.
+
+Princípios que guiaram as regras:
+
+- **Ausência de dado é neutra, nunca suspeita.** Sem GPS, sem histórico, primeiro Pix: o motor troca de fonte de evidência, não pune. No cold start o aparelho é "desconhecido", não "novo".
+- **Uma anomalia fraca sozinha nunca rejeita.** Nenhuma regra de pontos vale 90; rejeitar por score exige combinação de sinais.
+- **O perfil só aprende com Pix aprovados.** Tentativas barradas do fraudador não viram o "normal" do cliente. Já a velocity conta **todas** as tentativas, porque tentar de novo depois de ser barrado também é sinal.
+- **Mediana, não média.** Um único Pix grande (a compra do carro) não muda o padrão do cliente.
+- **O tempo do Pix, não o do servidor.** Todo histórico é lido "até `transaction_date`", então um Pix nunca é julgado com informação que só existiu depois dele.
+- **Parâmetros ancorados em norma quando ela existe.** O limite noturno e o limite de aparelho novo seguem as regras do Banco Central para o Pix.
+
+## Regras
+
+Valores em reais; no código ficam em centavos, em `src/engine/parameters.py`, cada um com o porquê ao lado. Janelas sempre terminam no `transaction_date` do Pix analisado.
+
+### Regras duras (rejeitam sozinhas)
+
+| Regra | Lógica | Parâmetros | Por quê |
+|-------|--------|------------|---------|
+| `VELOCITY_BOT` | Tentativas da mesma conta pagadora em 5 min, contando a atual e qualquer status | ≥ 5 | Nenhum cliente digita chave, valor e senha cinco vezes em cinco minutos. É script ou alguém raspando o saldo. |
+| `DEVICE_FARM` | CPFs/CNPJs pagadores distintos que usaram o mesmo `device_id` em 30 dias | ≥ 3 | Dois pode ser um casal dividindo o celular; três já é central de golpe operando contas compradas. |
+| `NIGHT_HARD_LIMIT` | Pix de PF entre 20h e 6h (hora local do cliente) | > R$ 5.000 | De noite o risco maior é coação (sequestro relâmpago), e sob coação a vítima também passa no 2FA. |
+| `DAILY_HARD_LIMIT` | Soma de aprovados + 2FA em 24 h, mais o Pix atual | PF > R$ 20.000; PJ > R$ 200.000 | Contenção de dano se tudo o mais falhar: celular destravado esvazia a conta em minutos. |
+| `NEW_DEVICE_DAILY_LIMIT` | Soma em 24 h feita de um aparelho novo, mais o Pix atual | > R$ 1.000 | Mesmo número do limite diário para aparelho novo da Res. BCB 402/2024. |
+| `IMPOSSIBLE_TRAVEL_OTHER_DEVICE` | Distância Haversine até o último Pix com GPS (até 24 h) ÷ tempo, e o aparelho é outro | > 1.000 km/h e > 100 km | Dois aparelhos em cidades distantes ao mesmo tempo é credencial clonada. |
+
+### Identidade (2FA resolve)
+
+| Regra | Lógica | Parâmetros | Por quê |
+|-------|--------|------------|---------|
+| `NIGHT_HIGH_VALUE` | Pix de PF entre 20h e 6h | > R$ 1.000 → +40 | Limite noturno padrão de PF da Res. BCB 142/2021. O cliente pode ter aumentado o limite, o que o motor não enxerga, então pede 2FA em vez de barrar. 40 = pede 2FA sozinho. |
+| `NEW_DEVICE` | A conta tem histórico, mas este aparelho não tem Pix aprovado nela há mais de 24 h | +30; +15 se > R$ 200 | Tomada de conta quase sempre começa em outro aparelho. As 24 h de maturação impedem "esquentar" o aparelho com um Pix de R$ 1. R$ 200 é o limite por Pix de aparelho novo do BC. |
+| `VELOCITY_BURST` | Tentativas em 5 min (ou em 1 h) | 3 em 5 min → +25; 4 → +40; 10 em 1 h → +20 | Rajada pode ser dividir a conta do restaurante, por isso pesa antes de barrar. Só a janela mais forte conta, para não pontuar duas vezes o mesmo fenômeno. |
+| `PROBING_AFTER_REJECTION` | Pix rejeitados desta conta na última hora | +20 por rejeição, máx. +40 | Tentar de novo logo depois de ser barrado é o fraudador procurando o valor que passa. |
+| `IMPOSSIBLE_TRAVEL` | Igual à regra dura, mas no mesmo aparelho | +45 | No mesmo aparelho pode ser GPS falsificado ou VPN, então pede confirmação em vez de barrar. |
+| `NEW_SOURCE_ACCOUNT` | Conta pagadora recém-aberta movimentando ≥ R$ 1.000 | < 2 dias → +35; < 7 dias → +25 | Identidade sintética ou conta aberta só para girar dinheiro de golpe. |
+| `SHARED_DEVICE` | 2 pagadores distintos no mesmo aparelho em 30 dias | +15 | Sinal fraco por si só (família), mas soma com outros. |
+| `SHARED_IP` | Pagadores distintos no mesmo IP em 24 h | ≥ 5 → +10 | IP é sinal fraco: operadora põe milhares de clientes atrás do mesmo IP (CGNAT). |
+
+### Destino (2FA não resolve)
+
+| Regra | Lógica | Parâmetros | Por quê |
+|-------|--------|------------|---------|
+| `NEW_DESTINATION_ACCOUNT` | Idade da conta destino na data do Pix (não vale para mesma titularidade) | < 7 dias → +30; < 30 dias → +15 | Conta laranja nasce para receber um golpe e é abandonada em dias. |
+| `DESTINATION_FAN_IN` | Pagadores distintos para a mesma conta destino em 24 h, contando o atual | PF: ≥ 5 → +35, ≥ 10 → +50. PJ: limiares 10x | Muitos CPFs pagando a mesma pessoa física numa tarde é golpe em massa em andamento. Comércio (CNPJ) recebe de muita gente por natureza. |
+| `FLAGGED_DESTINATION` | Pix para este destino rejeitados nos últimos 30 dias, vindos de **outros** pagadores | ≥ 1 → +35; ≥ 3 → +50 | Reputação de rede: se alguém já foi barrado pagando essa conta, a próxima vítima está a caminho. |
+| `PROFILE_AMOUNT_SPIKE` | Valor ÷ mediana dos aprovados em 90 dias (piso de R$ 100). Só com ≥ 5 Pix no histórico | > 3x → +20; > 10x → +35 | A vítima de golpe manda um valor fora do seu padrão. Com menos de 5 Pix não existe padrão, e a regra fica neutra. |
+| `STRUCTURING` | Pix de valor idêntico desta conta na última hora, contando o atual | ≥ 3 → +20 | Fracionar uma quantia em partes iguais para ficar abaixo dos tetos. |
+| `DAILY_EXPOSURE` | Soma de 24 h acima da metade do teto diário | +20 | Avisa antes do teto duro. |
+| `NEW_COUNTERPARTY` | Primeiro Pix desta conta para este destino | > R$ 500 → +10 | Todo mundo paga alguém pela primeira vez, então é fraco e só soma a outros sinais. |
+
+### Bônus de confiança
+
+| Regra | Lógica | Parâmetros | Por quê |
+|-------|--------|------------|---------|
+| `TRUSTED_COUNTERPARTY` | Pix aprovados para este destino e há quanto tempo foi o primeiro | ≥ 2 Pix e ≥ 7 dias → −30 | É o aluguel, a diarista, o fornecedor. É o que impede o motor de travar quem só quer pagar as contas. |
+| `SELF_TRANSFER` | Mesmo CPF/CNPJ dos dois lados | −25 | O dinheiro não sai da pessoa. |
+
+Os bônus só reduzem a própria categoria e nunca a deixam negativa: confiar no destino não "paga" a dúvida sobre a identidade.
+
+## Como as regras viram decisão
+
+A primeira linha que bate decide:
+
+| Ordem | Condição | Status | Racional |
+|---|---|---|---|
+| 1 | Alguma regra dura disparou | `rejected` | Risco claro, definido por política explícita. |
+| 2 | Risco de **destino** ≥ 60 | `rejected` | O 2FA não protege vítima de golpe. 60 é a assinatura do "falso parente": conta destino com menos de 7 dias (30) + valor 3x acima do padrão (20) + primeiro Pix para ela (10). |
+| 3 | Risco total (identidade + destino) ≥ 90 | `rejected` | A soma de sinais independentes já é evidência, não dúvida. Nenhuma regra sozinha chega a 90. |
+| 4 | Risco total ≥ 40 | `two_factor_required` | Dúvida moderada: o cliente confirma que é ele. Exige pelo menos um sinal forte ou dois moderados. |
+| 5 | O resto | `approved` | Sem fricção. |
+
+O Pix de exemplo do enunciado (R$ 1.500 às 22h15 para uma conta aberta há 7 dias) dá `two_factor_required`: limite noturno (+40 identidade), conta destino com menos de 30 dias (+15) e primeiro Pix para ela (+10), total 65.
+
+A resposta segue o contrato e explica a decisão na `metadata`:
 
 ```json
 {
-  "title": "Bad Request",
-  "description": "'hello' is a required property",
-  "translation": "Payload Inválido",
-  "code": "QIT000001"
+  "key": "5170cbfc-f08a-43c5-bca6-87956cce16db",
+  "status": "two_factor_required",
+  "metadata": {
+    "risk_score": 65,
+    "identity_score": 40,
+    "beneficiary_score": 25,
+    "decision_reason": "Dúvida moderada (65 pontos, 2FA a partir de 40): o cliente confirma que é ele antes do Pix sair.",
+    "triggered_rules": [
+      {"rule": "NIGHT_HIGH_VALUE", "category": "identity", "points": 40, "hard": false,
+       "detail": "R$ 1.500,00 às 22h, acima do limite noturno de R$ 1.000,00"},
+      {"rule": "NEW_DESTINATION_ACCOUNT", "category": "beneficiary", "points": 15, "hard": false,
+       "detail": "conta destino aberta há 7,6 dias"},
+      {"rule": "NEW_COUNTERPARTY", "category": "beneficiary", "points": 10, "hard": false,
+       "detail": "primeiro Pix para este destino, acima de R$ 500,00"}
+    ],
+    "signals": {"local_hour": 22, "is_night": true, "destination_account_age_days": 7.55, "...": "..."},
+    "thresholds": {"two_factor_required": 40, "rejected": 90, "rejected_by_beneficiary": 60},
+    "policy_version": "2026.10.17-v1",
+    "processing_time_ms": 21.4,
+    "pix_id": "pix-000123"
+  }
 }
 ```
 
-| Código      | Quando acontece                                  |
-|-------------|--------------------------------------------------|
-| `QIT000001` | o JSON enviado está fora do formato              |
-| `QIT000002` | faltou o `INTERNAL-TOKEN`, ou ele está errado    |
-| `QIT000010` | os parâmetros do endereço se contradizem         |
-| `QIT000404` | essa rota não existe                             |
-| `QIT000405` | a rota existe, mas não aceita esse método        |
-| `QIT000500` | erro inesperado (o time é avisado)               |
-| `QIT001001` | a entidade procurada não existe                  |
-| `QIT001002` | a entidade já está num status final              |
-| `QIT001003` | o CPF tem o formato certo, mas não é um CPF      |
-| `QIT001004` | já existe um cadastro com esse CPF               |
-| `QIT001005` | já existe um cadastro com esse e-mail            |
-| `QIT001006` | a pessoa é menor de idade                        |
-| `QIT001007` | a data de nascimento não existe no calendário    |
+## Modelagem de dados
 
-Um código estável vale mais que uma mensagem bonita: quem integra com a
-API programa em cima do código, não do texto.
+`database/database.sql` cria quatro tabelas:
 
-Os números não são sorteados. Eles vêm em duas faixas:
+| Tabela | O que guarda | Por quê |
+|---|---|---|
+| `pix_transaction` | Cada Pix recebido, com os campos do contrato em colunas tipadas e o corpo original em `JSONB` | As regras consultam por coluna (conta, aparelho, data); o JSON fica para auditoria. Valor em `BIGINT` de centavos, datas em `TIMESTAMPTZ` e o fuso do cliente em `utc_offset_minutes`, porque o `TIMESTAMPTZ` guarda o instante e perde o fuso. |
+| `pix_analysis` | A decisão (1:1 com o Pix): `analysis_key`, status, os três scores, motivo, versão da política, tempo de processamento e a metadata completa | O fato que chegou e o que o motor concluiu são coisas diferentes. A versão da política gravada permite explicar uma decisão antiga com a regra que valia no dia. |
+| `pix_analysis_status` | `approved`, `two_factor_required`, `rejected` | Tabela de domínio, no padrão do Base Service. |
+| `pix_analysis_rule_hit` | Uma linha por regra acionada, com pontos e detalhe | Permite perguntar ao banco "qual regra mais gera 2FA?" sem abrir JSON. |
 
-- **`QIT000…`** — os erros que **toda** API tem: JSON errado, sem token,
-  rota inexistente. Estão em `src/errors/base_error.py` e você não
-  precisa mexer neles.
-- **`QIT001…`** — os erros das **regras deste projeto**. Estão em
-  `src/errors/custom_errors.py`, e é aí que os seus entram: o próximo
-  livre é o `QIT001008`.
+Índices compostos seguem exatamente as perguntas das regras, com a data por último para a janela virar *range scan*: `(source_branch, source_account_number, transaction_date)`, `(destination_participant, destination_branch, destination_account_number, transaction_date)`, `(device_id, transaction_date)` e `(ip, transaction_date)`.
 
-Não repita um número. Se repetir, a API **não sobe** — tem uma checagem
-no start (`error_verification`, em `src/errors/base_error.py`) que
-procura código repetido e derruba a aplicação de propósito. Parecer
-chato agora é melhor que dois erros diferentes chegarem ao cliente com o
-mesmo código.
+Duas garantias de consistência:
 
----
+- **Idempotência.** `pix_id` é único. O mesmo `id` chegando de novo (retry de rede, clique duplo) devolve a análise já gravada com HTTP 200, em vez de analisar de novo, o que daria outra decisão porque o primeiro Pix já estaria contando na velocity.
+- **Concorrência.** O controller pega um `pg_advisory_xact_lock` pela conta pagadora antes de ler o histórico. Sem isso, cinco Pix simultâneos da mesma conta leriam o mesmo histórico vazio e passariam todos pela velocity. Contas diferentes continuam em paralelo.
 
-## 8. A licença
+Validações que devolvem 422: CPF/CNPJ com dígito verificador inválido, data que não existe no calendário, conta aberta depois do Pix e Pix com data no futuro (mais de 2 min), que serviria para plantar histórico adiantado.
 
-Este projeto é **MIT** — pode usar, copiar, modificar e levar para o seu
-portfólio, inclusive em trabalho pago. O único pedido é manter o arquivo
-`LICENSE` junto quando você distribuir o código.
+## Simulação: como calibramos
+
+`scripts/simulate.py` gera 60 dias de histórico de 150 clientes comuns (mercado, amigos, aluguel) e, no último dia, mistura o uso normal com seis tipos de ataque. Tudo é enviado para a API em ordem cronológica. Resultado com `--seed 42` (3.944 Pix, medindo só o último dia):
+
+| Cenário | Pix | Aprovado | 2FA | Rejeitado |
+|---|---:|---:|---:|---:|
+| Clientes legítimos | 328 | 98,2% | 1,8% | 0,0% |
+| Tomada de conta (aparelho novo) | 24 | 0,0% | 12,5% | 87,5% |
+| Celular roubado à noite | 24 | 0,0% | 37,5% | 62,5% |
+| Golpe para conta laranja | 16 | 0,0% | 0,0% | 100,0% |
+| Robô em rajada | 64 | 37,5% | 12,5% | 50,0% |
+| Fracionamento | 32 | 28,1% | 40,6% | 31,2% |
+| Fazenda de aparelhos | 6 | 33,3% | 0,0% | 66,7% |
+
+79% das tentativas de fraude foram paradas (2FA ou rejeição) e 93% do valor fraudado não passou direto, com 1,8% de clientes bons desafiados e nenhum rejeitado. Latência do motor: p50 de 22 ms e p99 de 32 ms.
+
+A simulação mudou dois parâmetros: com o corte de destino em 70, dois terços dos golpes para conta laranja só pediam 2FA (que a vítima passaria), e ele caiu para 60; a 4ª tentativa em 5 min passou a pedir 2FA sozinha. Nenhuma das duas mudanças aumentou a fricção dos clientes legítimos.
+
+O que sobra aprovado é estrutural: os primeiros Pix de um robô ou de um fracionamento são indistinguíveis de uso normal, e o padrão só aparece a partir do terceiro.
+
+**Limites honestos.** Os rótulos de fraude são do próprio script: isso mede a coerência da política contra ataques conhecidos, não precisão real. Para medir precisão e recall seria preciso fraude confirmada em produção e o resultado dos desafios 2FA, que o enunciado não fornece. Com esses dados, os próximos passos seriam medir a taxa de falso positivo por regra (a tabela `pix_analysis_rule_hit` já permite) e ajustar pesos por segmento (cliente novo vs. recorrente).
+
+## Como rodar e testar
+
+Requisitos: Docker e Python 3.11 (o SQLAlchemy 2.0.23 fixado no requirements não roda no Python 3.13).
+
+```bash
+# 1. Sobe a API (porta 3000) e o PostgreSQL (porta 5432)
+docker compose up --build
+
+# 2. Em outro terminal, instala as dependências de teste
+python -m venv .venv
+source .venv/bin/activate        # no Windows: .venv\Scripts\activate
+pip install -r requirements-dev.txt
+
+# 3. Roda os testes (unidade + integração contra a API de pé)
+pytest
+
+# 4. Opcional: simulação com clientes bons e ataques
+python scripts/simulate.py
+```
+
+Os testes de unidade (`tests/unit/`) testam as regras e a política sem banco nem API. Os de integração (`tests/integration/`) mandam Pix de verdade para a API: contrato, validações, idempotência e um cenário de ponta a ponta para cada tipo de fraude e de cliente bom. Cada teste usa contas e aparelhos aleatórios, então nenhum herda o histórico de outro.
+
+Exemplo de chamada (a rota exige o header `INTERNAL-TOKEN`; o valor padrão é `default_token`):
+
+```bash
+curl -X POST http://localhost:3000/pix/transaction \
+  -H "INTERNAL-TOKEN: default_token" -H "Content-Type: application/json" \
+  -d '{
+    "id": "pix-000123",
+    "amount": 150000,
+    "transaction_date": "2026-10-17T22:15:00-03:00",
+    "source_account": {"branch": "0001", "account_number": "88213",
+      "opening_date": "2025-03-02T10:00:00-03:00", "owner": {"document_number": "123.456.789-09"}},
+    "destination_account": {"participant": "60701190", "branch": "3675", "account_number": "10442",
+      "opening_date": "2026-10-10T09:00:00-03:00", "owner": {"document_number": "987.654.321-00"}},
+    "source": {"device_id": "dvc-9f2c71a8", "channel": "app", "ip": "198.51.100.23",
+      "geolocation": {"latitude": -23.56, "longitude": -46.65}}
+  }'
+
+curl http://localhost:3000/pix/transaction/pix-000123 -H "INTERNAL-TOKEN: default_token"
+```
+
+| Rota | Resposta |
+|---|---|
+| `POST /pix/transaction` | 201 com a análise; 200 se o `id` já foi analisado; 400 para payload fora do schema; 422 para documento ou data inválidos |
+| `GET /pix/transaction/{id}` | 200 com a análise gravada; 404 se o Pix não existe |
+
+## Estrutura
+
+```
+src/
+  engine/          o motor: parameters.py (números e porquês), signals.py, rules.py, policy.py
+  controllers/     pix_transaction_controller.py: valida, coleta histórico, decide, grava
+  repositories/    pix_transaction_repository.py: as consultas de janela
+  resources/       pix_transaction.py: as duas rotas
+  models/ dtos/ schemas/ errors/ middlewares/   camadas do Base Service
+database/database.sql
+scripts/simulate.py
+tests/unit/engine/                 regras e política, sem banco
+tests/integration/pix_transaction/ contrato e cenários de fraude pela API
+docs/                              guia original do Base Service
+```

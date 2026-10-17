@@ -31,7 +31,7 @@ services:
       # endereco do banco e sempre este.
       DATABASE_URL: postgresql+psycopg2://bootcamp:bootcamp@db:5432/bootcamp
       APP_ENV: ${APP_ENV:-local}
-      SERVICE_NAME: ${SERVICE_NAME:-bootcamp-api}
+      SERVICE_NAME: ${SERVICE_NAME:-pix-antifraude-api}
       # A senha que protege os endpoints internos. O padrao vale pra
       # estudar; num sistema de verdade, isso nunca teria valor padrao.
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-default_token}

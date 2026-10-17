@@ -413,6 +413,13 @@ def profile_amount_spike(signals: Signals) -> Optional[RuleHit]:
     if ratio is None:
         return None
 
+    # Repassando o que acabou de receber de vários pagadores (a vaquinha), o valor
+    # fora do perfil é explicado pela entrada, e o MULE_PASS_THROUGH já pesou isso:
+    # não conta duas vezes. O repasse de dinheiro sujo (+60) não entra aqui.
+    forwarding = mule_pass_through(signals)
+    if forwarding is not None and forwarding.points == p.MULE_PASS_THROUGH_POINTS:
+        return None
+
     if ratio > p.PROFILE_EXTREME_RATIO:
         points = p.PROFILE_EXTREME_POINTS
     elif ratio > p.PROFILE_SPIKE_RATIO:

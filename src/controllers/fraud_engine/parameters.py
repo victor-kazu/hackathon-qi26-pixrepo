@@ -7,7 +7,7 @@ análise, e é o que permite explicar uma decisão antiga com a regra que
 valia no dia.
 """
 
-POLICY_VERSION = "2026.10.17-v6"
+POLICY_VERSION = "2026.10.17-v7"
 
 REAIS = 100
 

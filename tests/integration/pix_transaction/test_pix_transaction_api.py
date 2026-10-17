@@ -88,6 +88,20 @@ class TestIdempotency:
         assert status == 409
         assert response["code"] == "QIT002006"
 
+        # O conflito não sobrescreve nada: a análise gravada é a do primeiro valor.
+        _, fetched = RequestGenerator.GET_pix_transaction(payload["id"])
+        assert fetched["metadata"]["signals"]["amount"] == 10_000
+
+    def test_same_id_to_another_destination_is_a_conflict(self):
+        payload = PayloadGenerator.create_pix_payload()
+        RequestGenerator.POST_pix_transaction(payload)
+
+        payload["destination_account"] = PayloadGenerator.create_account(participant="60701190")
+        status, response = RequestGenerator.POST_pix_transaction(payload)
+
+        assert status == 409
+        assert response["code"] == "QIT002006"
+
     def test_same_id_at_the_same_time_from_different_accounts(self):
         """O lock é por conta pagadora: o mesmo id vindo de contas diferentes não se espera.
 

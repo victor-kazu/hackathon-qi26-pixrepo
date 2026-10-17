@@ -88,6 +88,36 @@ class TestGoodCustomers:
         assert responses[2]["status"] == "two_factor_required"
         assert "DEVICE_FARM" in rules_of(responses[2])
 
+    def test_group_collection_forwarded_to_the_venue_is_approved(self):
+        """Vaquinha: quatro amigos pagam o organizador, que repassa tudo para a pousada.
+
+        Quem costuma pagar R$ 80 manda R$ 1.600 para um destino novo. O repasse
+        pesa (+25), mas o valor fora do perfil é explicado pelo dinheiro que
+        acabou de entrar e não conta de novo. Antes da v7, este Pix era rejeitado.
+        """
+        cpf = RandomGenerator.generate_cpf()
+        organizer_as_destination = PayloadGenerator.create_account(participant="32402502", document_number=cpf)
+        organizer = {key: value for key, value in organizer_as_destination.items() if key != "participant"}
+        device_id = new_device()
+        ObjectGenerator.build_history(organizer, PayloadGenerator.create_account(participant="60701190"), device_id, [40, 35, 20, 10, 5], 8_000)
+        for minute in (0, 10, 20, 30):
+            ObjectGenerator.analyze_pix(
+                amount=40_000,
+                transaction_date=PayloadGenerator.daytime(days_ago=1, hour=10, minute=minute),
+                destination_account=organizer_as_destination,
+            )
+
+        response = ObjectGenerator.analyze_pix(
+            amount=160_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=12),
+            source_account=organizer,
+            device_id=device_id,
+        )
+
+        assert response["status"] == "approved"
+        assert "MULE_PASS_THROUGH" in rules_of(response)
+        assert "PROFILE_AMOUNT_SPIKE" not in rules_of(response)
+
 
 class TestAccountTakeover:
     def test_new_device_asks_for_two_factor_and_then_hits_the_daily_limit(self):
@@ -253,6 +283,50 @@ class TestScams:
         assert "MULE_PASS_THROUGH" in rules_of(mule_forwards)
         assert next_payer["status"] == "rejected"
         assert "MULE_LINK" in rules_of(next_payer)
+
+    def test_paying_the_mule_after_it_was_caught_forwarding(self):
+        """A ligação vale nos dois sentidos: quem pagar o próprio laranja depois do repasse barrado também é barrado."""
+        mule_cpf = RandomGenerator.generate_cpf()
+        mule_as_destination = PayloadGenerator.create_account(
+            participant="60701190", opening_date=PayloadGenerator.daytime(days_ago=4), document_number=mule_cpf
+        )
+        mule_as_source = {key: value for key, value in mule_as_destination.items() if key != "participant"}
+
+        ObjectGenerator.analyze_pix(
+            amount=300_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=14),
+            destination_account=mule_as_destination,
+        )
+        mule_forwards = ObjectGenerator.analyze_pix(
+            amount=290_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=14, minute=20),
+            source_account=mule_as_source,
+        )
+        second_victim = ObjectGenerator.analyze_pix(
+            amount=200_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=15),
+            destination_account=mule_as_destination,
+        )
+
+        assert mule_forwards["status"] == "rejected"
+        assert second_victim["status"] == "rejected"
+        assert "MULE_LINK" in rules_of(second_victim)
+        assert "FLAGGED_DESTINATION" not in rules_of(second_victim)
+
+    def test_daily_ceiling_counts_what_already_left(self):
+        """R$ 12 mil passa com 2FA; outros R$ 12 mil no mesmo dia estouram o teto de R$ 20 mil e são barrados."""
+        source_account = PayloadGenerator.create_account()
+        first = ObjectGenerator.analyze_pix(
+            amount=1_200_000, transaction_date=PayloadGenerator.daytime(days_ago=1, hour=10), source_account=source_account
+        )
+        second = ObjectGenerator.analyze_pix(
+            amount=1_200_000, transaction_date=PayloadGenerator.daytime(days_ago=1, hour=16), source_account=source_account
+        )
+
+        assert first["status"] == "two_factor_required"
+        assert second["status"] == "rejected"
+        assert "DAILY_HARD_LIMIT" in rules_of(second)
+        assert second["metadata"]["signals"]["exposure_last_24h"] == 1_200_000
 
     def test_rejection_that_is_not_about_the_destination_does_not_flag_it(self):
         """Pix barrado pelo teto noturno do pagador não suja a conta de quem ia receber."""

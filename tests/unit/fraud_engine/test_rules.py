@@ -64,6 +64,12 @@ class TestNight:
 
         assert hit is not None and hit.hard
 
+    def test_exactly_the_hard_limit_asks_for_two_factor_instead(self):
+        codes = rule_codes(make_signals(transaction_date=NOW.replace(hour=23), amount=p.NIGHT_PF_HARD_LIMIT))
+
+        assert "NIGHT_HARD_LIMIT" not in codes
+        assert "NIGHT_HIGH_VALUE" in codes
+
 
 class TestColdStart:
     def test_first_pix_device_is_unknown_not_new(self):
@@ -85,6 +91,23 @@ class TestColdStart:
 
         assert signals.travel_speed_kmh is None
         assert rule_codes(signals) == []
+
+
+class TestNewSourceAccount:
+    def test_age_tiers(self):
+        amount = p.SOURCE_NEW_MIN_AMOUNT
+        very_new = find_hit(make_signals(amount=amount, source_opening_date=NOW - timedelta(days=1)), "NEW_SOURCE_ACCOUNT")
+        new = find_hit(make_signals(amount=amount, source_opening_date=NOW - timedelta(days=5)), "NEW_SOURCE_ACCOUNT")
+        week_old = make_signals(amount=amount, source_opening_date=NOW - timedelta(days=p.SOURCE_NEW_DAYS))
+
+        assert very_new.points == p.SOURCE_VERY_NEW_POINTS
+        assert new.points == p.SOURCE_NEW_POINTS
+        assert "NEW_SOURCE_ACCOUNT" not in rule_codes(week_old)
+
+    def test_small_pix_from_a_new_account_is_left_alone(self):
+        signals = make_signals(amount=p.SOURCE_NEW_MIN_AMOUNT - 1, source_opening_date=NOW - timedelta(days=1))
+
+        assert "NEW_SOURCE_ACCOUNT" not in rule_codes(signals)
 
 
 class TestDevice:
@@ -112,6 +135,10 @@ class TestDevice:
         farm = rule_codes(make_signals(History(device_distinct_documents=3)))
         assert "DEVICE_FARM" in farm
         assert "SHARED_DEVICE" not in farm
+
+    def test_shared_ip_needs_five_payers(self):
+        assert "SHARED_IP" not in rule_codes(make_signals(History(ip_distinct_documents=p.IP_SHARED_DOCUMENTS - 1)))
+        assert "SHARED_IP" in rule_codes(make_signals(History(ip_distinct_documents=p.IP_SHARED_DOCUMENTS)))
 
 
 class TestVelocity:
@@ -160,6 +187,14 @@ class TestVelocity:
 
         assert "SPLIT_PAYMENT" in rule_codes(make_signals(three_parts, amount=200_000))
 
+    def test_split_limit_is_higher_for_companies(self):
+        company = dict(source_document_number="11222333000181")
+        three_parts = History(destination_parts_recent=2, destination_amount_recent=2 * 200_000)
+        above_company_limit = History(destination_parts_recent=2, destination_amount_recent=2 * 2_000_000)
+
+        assert "SPLIT_PAYMENT" not in rule_codes(make_signals(three_parts, amount=200_000, **company))
+        assert "SPLIT_PAYMENT" in rule_codes(make_signals(above_company_limit, amount=2_000_000, **company))
+
     def test_part_above_the_limit_is_left_to_the_limit_rule(self):
         at_23h = NOW.replace(hour=23)
         history = History(destination_parts_recent=2, destination_amount_recent=2 * 150_000)
@@ -198,6 +233,13 @@ class TestImpossibleTravel:
         signals = make_signals(History(previous_location=self.previous("dvc-other")), latitude=-8.05, longitude=-34.88)
         assert "IMPOSSIBLE_TRAVEL_OTHER_DEVICE" in rule_codes(signals)
 
+    def test_two_pix_in_the_same_second_do_not_divide_by_zero(self):
+        previous = PreviousLocation(-23.56, -46.65, NOW, "dvc-1")
+        signals = make_signals(History(previous_location=previous), latitude=-8.05, longitude=-34.88)
+
+        assert signals.travel_speed_kmh > p.IMPOSSIBLE_TRAVEL_SPEED_KMH
+        assert "IMPOSSIBLE_TRAVEL" in rule_codes(signals)
+
     def test_short_hop_is_gps_noise(self):
         # Guarulhos fica a ~20 km: rápido, mas dentro do erro de GPS/IP.
         previous = PreviousLocation(-23.56, -46.65, NOW - timedelta(seconds=30), "dvc-other")
@@ -220,6 +262,11 @@ class TestDestination:
         assert "DESTINATION_FAN_IN" in rule_codes(make_signals(payers))
         assert "DESTINATION_FAN_IN" not in rule_codes(make_signals(payers, destination_document_number="11222333000181"))
 
+    def test_fan_in_weighs_more_from_ten_payers(self):
+        hit = find_hit(make_signals(History(destination_distinct_payers=p.FAN_IN_PF_HIGH_PAYERS)), "DESTINATION_FAN_IN")
+
+        assert hit.points == p.FAN_IN_HIGH_POINTS
+
     def test_flagged_destination(self):
         one = find_hit(make_signals(History(destination_flagged_payers=1)), "FLAGGED_DESTINATION")
         three = find_hit(make_signals(History(destination_flagged_payers=3)), "FLAGGED_DESTINATION")
@@ -238,6 +285,12 @@ class TestDestination:
 
         assert signals.profile_median == 10_000
         assert find_hit(signals, "PROFILE_AMOUNT_SPIKE").points == p.PROFILE_SPIKE_POINTS
+
+    def test_amount_ten_times_the_median_is_extreme(self):
+        history = History(approved_amounts_profile=[10_000] * 10)
+
+        assert find_hit(make_signals(history, amount=100_000), "PROFILE_AMOUNT_SPIKE").points == p.PROFILE_SPIKE_POINTS
+        assert find_hit(make_signals(history, amount=100_001), "PROFILE_AMOUNT_SPIKE").points == p.PROFILE_EXTREME_POINTS
 
     def test_high_value_without_profile_starts_at_5k(self):
         hit = find_hit(make_signals(amount=p.HIGH_VALUE_AMOUNT), "HIGH_VALUE_WITHOUT_PROFILE")
@@ -259,6 +312,31 @@ class TestDestination:
     def test_new_counterparty_only_above_minimum(self):
         assert "NEW_COUNTERPARTY" not in rule_codes(make_signals(amount=p.NEW_COUNTERPARTY_MIN_AMOUNT))
         assert "NEW_COUNTERPARTY" in rule_codes(make_signals(amount=p.NEW_COUNTERPARTY_MIN_AMOUNT + 1))
+
+
+class TestDailyLimit:
+    def test_daily_ceiling_counts_what_already_left(self):
+        history = History(exposure_24h=p.DAILY_PF_HARD_LIMIT - 10_000)
+
+        assert "DAILY_HARD_LIMIT" not in rule_codes(make_signals(history, amount=10_000))
+        hit = find_hit(make_signals(history, amount=10_001), "DAILY_HARD_LIMIT")
+        assert hit.hard and hit.category == "beneficiary"
+
+    def test_more_than_half_the_ceiling_weighs_without_blocking(self):
+        half = p.DAILY_PF_HARD_LIMIT // 2
+        codes_at_half = rule_codes(make_signals(History(exposure_24h=half - 10_000), amount=10_000))
+        codes_above_half = rule_codes(make_signals(History(exposure_24h=half), amount=10_000))
+
+        assert "DAILY_EXPOSURE" not in codes_at_half
+        assert "DAILY_EXPOSURE" in codes_above_half
+        assert "DAILY_HARD_LIMIT" not in codes_above_half
+
+    def test_companies_have_a_ten_times_higher_ceiling(self):
+        history = History(exposure_24h=p.DAILY_PF_HARD_LIMIT)
+        codes = rule_codes(make_signals(history, amount=100_000, source_document_number="11222333000181"))
+
+        assert "DAILY_HARD_LIMIT" not in codes
+        assert "DAILY_EXPOSURE" not in codes
 
 
 class TestMuleChain:
@@ -294,6 +372,35 @@ class TestMuleChain:
             make_signals(company, amount=4_000_000, source_document_number="11222333000181")
         )
 
+    def test_a_company_forwarding_money_the_engine_found_risky_is_still_caught(self):
+        """Empresa de fachada também serve de laranja: o +25 é só para PF, o +60 vale para todos."""
+        history = History(source_inbound_payers=1, source_inbound_amount=300_000, source_inbound_suspicious_payers=1)
+        signals = make_signals(history, amount=280_000, source_document_number="11222333000181")
+
+        assert find_hit(signals, "MULE_PASS_THROUGH").points == p.MULE_DIRTY_MONEY_POINTS
+
+    def test_group_collection_does_not_count_the_profile_spike_twice(self):
+        """Vaquinha: R$ 1.500 de 4 amigos repassados para a pousada, por quem costuma pagar R$ 80."""
+        history = History(
+            approved_amounts_profile=[8_000] * 10, source_inbound_payers=4, source_inbound_amount=150_000
+        )
+        codes = rule_codes(make_signals(history, amount=150_000))
+
+        assert "MULE_PASS_THROUGH" in codes
+        assert "PROFILE_AMOUNT_SPIKE" not in codes
+
+    def test_dirty_money_keeps_the_profile_spike(self):
+        history = History(
+            approved_amounts_profile=[8_000] * 10,
+            source_inbound_payers=1,
+            source_inbound_amount=150_000,
+            source_inbound_suspicious_payers=1,
+        )
+        codes = rule_codes(make_signals(history, amount=150_000))
+
+        assert "MULE_PASS_THROUGH" in codes
+        assert "PROFILE_AMOUNT_SPIKE" in codes
+
     def test_paying_an_account_linked_to_a_chain(self):
         hit = find_hit(make_signals(History(destination_mule_links=1)), "MULE_LINK")
         assert hit.points == p.MULE_LINK_POINTS
@@ -320,6 +427,28 @@ class TestTrust:
         assert "SELF_TRANSFER" in codes
         assert "NEW_DESTINATION_ACCOUNT" not in codes
         assert "NEW_COUNTERPARTY" not in codes
+
+    def test_self_transfer_is_not_split_high_value_or_a_mule(self):
+        """Juntar o salário que entrou e mandar para a própria poupança não é repasse de laranja."""
+        history = History(
+            destination_parts_recent=2,
+            destination_amount_recent=2 * 400_000,
+            source_inbound_payers=3,
+            source_inbound_amount=1_500_000,
+            source_inbound_suspicious_payers=1,
+            destination_mule_links=1,
+        )
+        signals = make_signals(
+            history,
+            amount=1_200_000,
+            destination_document_number="12345678909",
+            destination_opening_date=NOW - timedelta(days=400),
+        )
+        codes = rule_codes(signals)
+
+        assert "SELF_TRANSFER" in codes
+        for code in ("SPLIT_PAYMENT", "HIGH_VALUE_WITHOUT_PROFILE", "MULE_PASS_THROUGH", "MULE_LINK"):
+            assert code not in codes
 
     def test_same_cpf_on_a_brand_new_account_is_not_a_self_transfer(self):
         """Conta espelho: aberta ontem no CPF da vítima. Mesmo dono no papel, não na prática."""

@@ -8,7 +8,15 @@ from controllers.base_controller import BaseController
 from controllers.fraud_engine import parameters as p
 from controllers.fraud_engine.policy import REJECTED, decide
 from controllers.fraud_engine.rules import MULE_PASS_THROUGH
-from controllers.fraud_engine.signals import History, PreviousLocation, TransactionFacts, build_signals
+from controllers.fraud_engine.signals import (
+    History,
+    PreviousLocation,
+    TransactionFacts,
+    build_signals,
+    is_night_hour,
+    local_datetime,
+    night_start,
+)
 from dtos import PixAnalysisDTO
 from errors import (
     AccountOpenedAfterTransaction,
@@ -162,7 +170,16 @@ class PixTransactionController(BaseController):
             destination_mule_links=repository.count_destination_mule_links(
                 facts, timedelta(days=p.MULE_LINK_WINDOW_DAYS), MULE_PASS_THROUGH
             ),
+            night_outflow=self._night_outflow(facts),
         )
+
+    def _night_outflow(self, facts: TransactionFacts) -> int:
+        """Quanto saiu desta conta desde as 20h desta noite. De dia, zero."""
+        if not is_night_hour(local_datetime(facts.transaction_date).hour):
+            return 0
+
+        since_night_start = facts.transaction_date - night_start(facts.transaction_date)
+        return self.pix_transaction_repository.sum_source_amounts(facts, since_night_start)
 
     def _previous_location(self, facts: TransactionFacts) -> Optional[PreviousLocation]:
         row = self.pix_transaction_repository.get_previous_location(

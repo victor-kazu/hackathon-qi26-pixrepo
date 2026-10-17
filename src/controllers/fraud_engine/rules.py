@@ -56,23 +56,42 @@ def _reais(cents: int) -> str:
 
 
 def velocity_bot(signals: Signals) -> Optional[RuleHit]:
+    """Ritmo de robô barra sozinho, mas a régua depende de quem paga.
+
+    Conta nova é o que o robô usa: 5 tentativas em 5 min já barram. Para o
+    pagador maduro (conta antiga com histórico aprovado), 5 em 5 min é o
+    racha do bar, e quem pede o 2FA é o VELOCITY_BURST; barrar só a partir
+    de 10 (pessoa física) ou 30 (empresa pagando folha em lote).
+    """
     attempts = signals.history.attempts_short_window + 1
-    if attempts >= p.VELOCITY_BOT_ATTEMPTS:
+    limit = _velocity_bot_limit(signals)
+    if attempts >= limit:
         return RuleHit(
             "VELOCITY_BOT", IDENTITY, 0, True,
-            f"{attempts} tentativas em {p.VELOCITY_SHORT_WINDOW_MINUTES} min (limite {p.VELOCITY_BOT_ATTEMPTS - 1})",
+            f"{attempts} tentativas em {p.VELOCITY_SHORT_WINDOW_MINUTES} min (limite {limit - 1})",
         )
     return None
 
 
 def device_farm(signals: Signals) -> Optional[RuleHit]:
+    """Três pagadores num aparelho é central de golpe, a não ser que quem paga seja maduro.
+
+    Conta antiga com histórico, num celular com 3 ou 4 pagadores, é o
+    perfil da família que divide o aparelho: pesa 40 (pede 2FA) em vez de
+    barrar. Com 5 ou mais, ou com pagador sem maturidade, continua barrando.
+    """
     documents = signals.history.device_distinct_documents
-    if documents >= p.DEVICE_FARM_DOCUMENTS:
+    if documents < p.DEVICE_FARM_DOCUMENTS:
+        return None
+
+    detail = f"aparelho usado por {documents} CPFs/CNPJs pagadores em {p.DEVICE_WINDOW_DAYS} dias"
+    if signals.is_mature_payer and documents < p.DEVICE_FARM_HARD_DOCUMENTS:
         return RuleHit(
-            "DEVICE_FARM", IDENTITY, 0, True,
-            f"aparelho usado por {documents} CPFs/CNPJs pagadores em {p.DEVICE_WINDOW_DAYS} dias",
+            "DEVICE_FARM", IDENTITY, p.DEVICE_FARM_MATURE_POINTS, False,
+            detail + "; pagador com conta antiga e histórico, então pede 2FA em vez de barrar",
         )
-    return None
+
+    return RuleHit("DEVICE_FARM", IDENTITY, 0, True, detail)
 
 
 def night_hard_limit(signals: Signals) -> Optional[RuleHit]:
@@ -83,6 +102,23 @@ def night_hard_limit(signals: Signals) -> Optional[RuleHit]:
             f"{_reais(amount)} às {signals.local_hour}h, acima do teto noturno de {_reais(p.NIGHT_PF_HARD_LIMIT)}",
         )
     return None
+
+
+def night_total_hard_limit(signals: Signals) -> Optional[RuleHit]:
+    """A noite somada passou do teto de coação: barra como um Pix único desse valor barraria."""
+    total = _night_total(signals)
+    if total is None or total <= p.NIGHT_PF_HARD_LIMIT:
+        return None
+
+    # Um Pix sozinho acima do teto já é o NIGHT_HARD_LIMIT.
+    if signals.facts.amount > p.NIGHT_PF_HARD_LIMIT:
+        return None
+
+    return RuleHit(
+        "NIGHT_TOTAL_HARD_LIMIT", IDENTITY, 0, True,
+        f"{_reais(total)} saíram desde as {p.NIGHT_START_HOUR}h com este Pix, acima do teto noturno de "
+        f"{_reais(p.NIGHT_PF_HARD_LIMIT)}",
+    )
 
 
 def daily_hard_limit(signals: Signals) -> Optional[RuleHit]:
@@ -161,6 +197,23 @@ def night_high_value(signals: Signals) -> Optional[RuleHit]:
             f"{_reais(amount)} às {signals.local_hour}h, acima do limite noturno de {_reais(p.NIGHT_PF_LIMIT)}",
         )
     return None
+
+
+def night_total(signals: Signals) -> Optional[RuleHit]:
+    """Drenagem espalhada de madrugada: vários Pix abaixo do limite, para destinos diferentes."""
+    total = _night_total(signals)
+    if total is None or total <= p.NIGHT_TOTAL_SOFT_LIMIT or total > p.NIGHT_PF_HARD_LIMIT:
+        return None
+
+    # Pix acima do limite noturno já pesa pelo NIGHT_HIGH_VALUE: não conta duas vezes.
+    if signals.facts.amount > p.NIGHT_PF_LIMIT:
+        return None
+
+    return RuleHit(
+        "NIGHT_TOTAL", IDENTITY, p.NIGHT_TOTAL_POINTS, False,
+        f"{_reais(total)} saíram desde as {p.NIGHT_START_HOUR}h com este Pix, acima de "
+        f"{_reais(p.NIGHT_TOTAL_SOFT_LIMIT)}",
+    )
 
 
 def new_device(signals: Signals) -> Optional[RuleHit]:
@@ -428,9 +481,27 @@ def self_transfer(signals: Signals) -> Optional[RuleHit]:
     if signals.is_self_transfer:
         return RuleHit(
             "SELF_TRANSFER", BENEFICIARY, p.SELF_TRANSFER_BONUS, False,
-            "pagador e recebedor têm o mesmo CPF/CNPJ",
+            "pagador e recebedor têm o mesmo CPF/CNPJ, e a conta de destino é antiga ou já conhecida",
         )
     return None
+
+
+def _velocity_bot_limit(signals: Signals) -> int:
+    if not signals.is_mature_payer:
+        return p.VELOCITY_BOT_ATTEMPTS
+
+    if signals.source_is_pf:
+        return p.VELOCITY_BOT_MATURE_PF_ATTEMPTS
+
+    return p.VELOCITY_BOT_MATURE_PJ_ATTEMPTS
+
+
+def _night_total(signals: Signals) -> Optional[int]:
+    """Quanto saiu na noite, com este Pix. None quando a regra não se aplica (dia, PJ, conta própria)."""
+    if not signals.is_night or not signals.source_is_pf or signals.is_self_transfer:
+        return None
+
+    return signals.history.night_outflow + signals.facts.amount
 
 
 def _daily_limit(signals: Signals) -> int:
@@ -463,12 +534,14 @@ RULES: List[Callable[[Signals], Optional[RuleHit]]] = [
     velocity_bot,
     device_farm,
     night_hard_limit,
+    night_total_hard_limit,
     daily_hard_limit,
     new_device_daily_limit,
     impossible_travel_other_device,
     velocity_burst,
     probing_after_rejection,
     night_high_value,
+    night_total,
     new_device,
     impossible_travel,
     new_source_account,

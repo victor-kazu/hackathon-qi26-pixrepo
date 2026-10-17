@@ -7,7 +7,7 @@ análise, e é o que permite explicar uma decisão antiga com a regra que
 valia no dia.
 """
 
-POLICY_VERSION = "2026.10.17-v5"
+POLICY_VERSION = "2026.10.17-v6"
 
 REAIS = 100
 
@@ -45,6 +45,15 @@ NIGHT_HIGH_VALUE_POINTS = 40
 # relâmpago), e sob coação a vítima também passa no 2FA: acima disso só
 # barrar protege.
 NIGHT_PF_HARD_LIMIT = 5_000 * REAIS
+
+# Soma da noite: o limite do BCB é por Pix, e quem drena a conta de
+# madrugada espalha R$ 950 por várias contas diferentes, cada uma abaixo
+# do limite e nenhuma repetida (o SPLIT_PAYMENT, que olha o mesmo
+# destino, não vê). A noite inteira, desde as 20h, é tratada como um Pix
+# só: passou de 3x o limite noturno, pesa como o próprio limite (40, que
+# pede 2FA); passou do teto de coação, barra como o teto barraria.
+NIGHT_TOTAL_SOFT_LIMIT = 3_000 * REAIS
+NIGHT_TOTAL_POINTS = 40
 
 # ─── Teto diário ────────────────────────────────────────────────────
 # Exposição de 24 h (aprovados + 2FA + o Pix atual). Contenção de dano
@@ -241,3 +250,28 @@ TRUSTED_COUNTERPARTY_BONUS = -30
 
 # Pix para conta do mesmo titular: o dinheiro não sai da pessoa.
 SELF_TRANSFER_BONUS = -25
+
+# ...desde que a conta de destino seja mesmo da pessoa. O golpe da conta
+# espelho abre, com os dados roubados da vítima, uma conta NO CPF DELA em
+# outro banco, e depois esvazia a conta verdadeira para lá: para o motor,
+# "mesmo titular". Por isso o mesmo CPF só vale como transferência entre
+# contas próprias se a conta de destino tem 30 dias ou já recebeu deste
+# cliente um Pix aprovado há pelo menos TRUSTED_COUNTERPARTY_MIN_DAYS.
+# Fora isso é um Pix comum: conta nova, cadeia de laranjas, tudo vale.
+SELF_TRANSFER_MIN_DESTINATION_DAYS = 30
+
+# ─── Maturidade do pagador ──────────────────────────────────────────
+# Robô de rajada e fazenda de aparelhos usam conta nova: conta aberta
+# com dados de terceiros, ou comprada, e descartada depois do golpe. Uma
+# conta com 6 meses e histórico aprovado pagando 5 amigos em 4 minutos é
+# o racha do bar; três pessoas antigas no mesmo celular é uma família.
+# Para o pagador maduro, essas duas regras pedem 2FA em vez de barrar,
+# e só barram num volume que nenhum uso humano explica.
+MATURE_ACCOUNT_DAYS = 180
+MATURE_MIN_APPROVED = 5
+VELOCITY_BOT_MATURE_PF_ATTEMPTS = 10
+# Empresa paga folha e fornecedores em lote: dezenas em poucos minutos.
+VELOCITY_BOT_MATURE_PJ_ATTEMPTS = 30
+DEVICE_FARM_MATURE_POINTS = 40
+# Cinco ou mais pagadores no mesmo aparelho em 30 dias não é família.
+DEVICE_FARM_HARD_DOCUMENTS = 5

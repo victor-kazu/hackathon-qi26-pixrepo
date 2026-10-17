@@ -45,16 +45,48 @@ class TestGoodCustomers:
     def test_moving_money_between_own_accounts_is_approved(self):
         cpf = RandomGenerator.generate_cpf()
         source_account = PayloadGenerator.create_account(document_number=cpf)
-        own_new_account = PayloadGenerator.create_account(
-            participant="18236120", document_number=cpf, opening_date=PayloadGenerator.daytime(days_ago=3)
+        own_account_elsewhere = PayloadGenerator.create_account(
+            participant="18236120", document_number=cpf, opening_date=PayloadGenerator.daytime(days_ago=60)
         )
 
         response = ObjectGenerator.analyze_pix(
-            amount=500_000, source_account=source_account, destination_account=own_new_account
+            amount=500_000, source_account=source_account, destination_account=own_account_elsewhere
         )
 
         assert response["status"] == "approved"
         assert rules_of(response) == ["SELF_TRANSFER"]
+
+    def test_five_friends_in_four_minutes_from_a_mature_account_is_not_a_bot(self):
+        """Racha do bar: conta antiga com histórico paga 5 amigos em 4 minutos. Pede 2FA, não barra."""
+        source_account, device_id = PayloadGenerator.create_account(), new_device()
+        ObjectGenerator.build_history(source_account, PayloadGenerator.create_account(participant="60701190"), device_id, [40, 35, 20, 10, 5], 3_000)
+
+        responses = [
+            ObjectGenerator.analyze_pix(
+                amount=4_500,
+                transaction_date=PayloadGenerator.daytime(days_ago=1, hour=16, minute=minute),
+                source_account=source_account,
+                device_id=device_id,
+            )
+            for minute in range(5)
+        ]
+
+        assert [response["status"] for response in responses] == [
+            "approved", "approved", "two_factor_required", "two_factor_required", "two_factor_required",
+        ]
+        assert "VELOCITY_BOT" not in rules_of(responses[4])
+
+    def test_family_of_three_sharing_a_phone_asks_two_factor(self):
+        """Três pessoas com conta antiga e histórico próprio passam a usar o mesmo celular."""
+        shared_phone = new_device()
+        responses = []
+        for _ in range(3):
+            member = PayloadGenerator.create_account()
+            ObjectGenerator.build_history(member, PayloadGenerator.create_account(participant="60701190"), new_device(), [40, 35, 20, 10, 5], 3_000)
+            responses.append(ObjectGenerator.analyze_pix(amount=5_000, source_account=member, device_id=shared_phone))
+
+        assert responses[2]["status"] == "two_factor_required"
+        assert "DEVICE_FARM" in rules_of(responses[2])
 
 
 class TestAccountTakeover:
@@ -303,6 +335,56 @@ class TestScams:
         assert responses[2]["status"] == "two_factor_required"
         assert "SPLIT_PAYMENT" in rules_of(responses[2])
         assert "STRUCTURING" not in rules_of(responses[2])
+
+    def test_mirror_account_in_the_victims_name_is_not_a_self_transfer(self):
+        """Conta espelho: aberta ontem, em outro banco, NO CPF da vítima, para esvaziar a conta dela.
+
+        Mesmo CPF dos dois lados não basta: a conta de destino precisa ser
+        antiga ou já conhecida para valer como transferência entre contas
+        próprias. Antes desta regra, este Pix era aprovado.
+        """
+        cpf = RandomGenerator.generate_cpf()
+        victim, device_id = PayloadGenerator.create_account(document_number=cpf), new_device()
+        ObjectGenerator.build_history(victim, PayloadGenerator.create_account(participant="60701190"), device_id, [40, 35, 20, 10, 5], 100_000)
+        mirror = PayloadGenerator.create_account(
+            participant="18236120", document_number=cpf, opening_date=PayloadGenerator.daytime(days_ago=2)
+        )
+
+        response = ObjectGenerator.analyze_pix(
+            amount=1_500_000, source_account=victim, destination_account=mirror, device_id=device_id
+        )
+
+        assert response["status"] == "rejected"
+        assert "SELF_TRANSFER" not in rules_of(response)
+        assert "NEW_DESTINATION_ACCOUNT" in rules_of(response)
+        assert response["metadata"]["signals"]["same_owner"] is True
+
+    def test_draining_at_night_spread_over_many_destinations(self):
+        """De madrugada, Pix de R$ 930 a R$ 970 para contas antigas diferentes, nenhum valor repetido.
+
+        Nenhum passa do limite noturno, nenhum destino se repete e nenhum valor
+        se repete: só a soma da noite enxerga. Acima de R$ 3.000 pede 2FA;
+        acima de R$ 5.000, o teto de coação, barra.
+        """
+        source_account, device_id = PayloadGenerator.create_account(), new_device()
+        ObjectGenerator.build_history(source_account, PayloadGenerator.create_account(participant="60701190"), device_id, [40, 35, 20, 10, 5], 100_000)
+
+        amounts = [95_000, 93_000, 97_000, 94_000, 96_000, 98_000]
+        responses = [
+            ObjectGenerator.analyze_pix(
+                amount=amount,
+                transaction_date=PayloadGenerator.daytime(days_ago=1, hour=1, minute=8 * index),
+                source_account=source_account,
+                device_id=device_id,
+            )
+            for index, amount in enumerate(amounts)
+        ]
+
+        assert [response["status"] for response in responses] == [
+            "approved", "approved", "approved", "two_factor_required", "two_factor_required", "rejected",
+        ]
+        assert "NIGHT_TOTAL" in rules_of(responses[3])
+        assert "NIGHT_TOTAL_HARD_LIMIT" in rules_of(responses[5])
 
     def test_first_pix_of_high_value_asks_for_two_factor(self):
         """Sem histórico, R$ 6 mil pede 2FA (30 + 10); R$ 15 mil também, sem chegar a rejeitar."""

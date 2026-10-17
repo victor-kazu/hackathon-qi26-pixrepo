@@ -59,9 +59,10 @@ Valores em reais; no código ficam em centavos, em `src/controllers/fraud_engine
 
 | Regra | Lógica | Parâmetros | Por quê |
 |-------|--------|------------|---------|
-| `VELOCITY_BOT` | Tentativas da mesma conta pagadora em 5 min, contando a atual e qualquer status | ≥ 5 | Nenhum cliente digita chave, valor e senha cinco vezes em cinco minutos. É script ou alguém raspando o saldo. |
-| `DEVICE_FARM` | CPFs/CNPJs pagadores distintos que usaram o mesmo `device_id` em 30 dias | ≥ 3 | Dois pode ser um casal dividindo o celular; três já é central de golpe operando contas compradas. |
+| `VELOCITY_BOT` | Tentativas da mesma conta pagadora em 5 min, contando a atual e qualquer status | ≥ 5. Pagador **maduro** (conta com ≥ 180 dias e ≥ 5 Pix aprovados): ≥ 10 (PF) ou ≥ 30 (PJ) | Conta nova digitando cinco Pix em cinco minutos é script ou alguém raspando o saldo. Conta antiga com histórico fazendo o mesmo é o racha do bar (ou a folha de pagamento, na empresa): aí quem pede o 2FA é o `VELOCITY_BURST`, e só barramos num volume que nenhum uso humano explica. |
+| `DEVICE_FARM` | CPFs/CNPJs pagadores distintos que usaram o mesmo `device_id` em 30 dias | ≥ 3. Pagador maduro com 3 ou 4 no aparelho → +40 (pede 2FA, não barra); ≥ 5 barra sempre | Três contas novas num aparelho é central de golpe operando contas compradas. Três pessoas com conta antiga e histórico próprio no mesmo celular é uma família, e merece confirmação, não bloqueio. |
 | `NIGHT_HARD_LIMIT` | Pix de PF entre 20h e 6h (hora local do cliente) | > R$ 5.000 | De noite o risco maior é coação (sequestro relâmpago), e sob coação a vítima também passa no 2FA. |
+| `NIGHT_TOTAL_HARD_LIMIT` | Soma do que saiu da conta de PF desde as 20h (aprovados + 2FA), mais o Pix atual | > R$ 5.000 | O mesmo teto de coação, aplicado à noite inteira: cinco Pix de R$ 990 para cinco contas diferentes tiram o mesmo dinheiro que um de R$ 5.000. |
 | `DAILY_HARD_LIMIT` | Soma de aprovados + 2FA em 24 h, mais o Pix atual | PF > R$ 20.000; PJ > R$ 200.000 | Contenção de dano se tudo o mais falhar: celular destravado esvazia a conta em minutos. |
 | `NEW_DEVICE_DAILY_LIMIT` | Soma em 24 h feita de um aparelho novo, mais o Pix atual | > R$ 1.000 | Mesmo número do limite diário para aparelho novo da Res. BCB 402/2024. |
 | `IMPOSSIBLE_TRAVEL_OTHER_DEVICE` | Distância Haversine até o último Pix com GPS (até 24 h) ÷ tempo, e o aparelho é outro | > 1.000 km/h e > 100 km | Dois aparelhos em cidades distantes ao mesmo tempo é credencial clonada. |
@@ -71,6 +72,7 @@ Valores em reais; no código ficam em centavos, em `src/controllers/fraud_engine
 | Regra | Lógica | Parâmetros | Por quê |
 |-------|--------|------------|---------|
 | `NIGHT_HIGH_VALUE` | Pix de PF entre 20h e 6h | > R$ 1.000 → +40 | Limite noturno padrão de PF da Res. BCB 142/2021. O cliente pode ter aumentado o limite, o que o motor não enxerga, então pede 2FA em vez de barrar. 40 = pede 2FA sozinho. |
+| `NIGHT_TOTAL` | Soma do que saiu da conta de PF desde as 20h, mais o Pix atual, com cada Pix abaixo do limite noturno | > R$ 3.000 → +40 | O limite do BCB é por Pix. Quem drena a conta de madrugada espalha Pix abaixo de R$ 1.000 por contas diferentes, sem repetir valor nem destino: o `SPLIT_PAYMENT` (mesmo destino) e o `STRUCTURING` (mesmo valor) não veem. A noite é tratada como um Pix só. |
 | `NEW_DEVICE` | A conta tem histórico, mas este aparelho não tem Pix aprovado nela há mais de 24 h | +30; +15 se > R$ 200 | Tomada de conta quase sempre começa em outro aparelho. As 24 h de maturação impedem "esquentar" o aparelho com um Pix de R$ 1. R$ 200 é o limite por Pix de aparelho novo do BC. |
 | `VELOCITY_BURST` | Tentativas em 5 min (ou em 1 h) | 3 em 5 min → +25; 4 → +40; 10 em 1 h → +20 | Rajada pode ser dividir a conta do restaurante, por isso pesa antes de barrar. Só a janela mais forte conta, para não pontuar duas vezes o mesmo fenômeno. |
 | `PROBING_AFTER_REJECTION` | Pix rejeitados desta conta na última hora | +20 por rejeição, máx. +40 | Tentar de novo logo depois de ser barrado é o fraudador procurando o valor que passa. |
@@ -111,7 +113,7 @@ O custo conhecido: uma conta recém-aberta que recebe de alguém pela primeira v
 | Regra | Lógica | Parâmetros | Por quê |
 |-------|--------|------------|---------|
 | `TRUSTED_COUNTERPARTY` | Pix aprovados para este destino e há quanto tempo foi o primeiro | ≥ 2 Pix e ≥ 7 dias → −30 | É o aluguel, a diarista, o fornecedor. É o que impede o motor de travar quem só quer pagar as contas. |
-| `SELF_TRANSFER` | Mesmo CPF/CNPJ dos dois lados | −25 | O dinheiro não sai da pessoa. |
+| `SELF_TRANSFER` | Mesmo CPF/CNPJ dos dois lados **e** conta de destino com ≥ 30 dias ou já paga com aprovação há ≥ 7 dias | −25; e as regras de destino novo, valor sem perfil e cadeia não se aplicam | O dinheiro não sai da pessoa, desde que a conta seja mesmo dela. No golpe da **conta espelho**, o fraudador abre, com os dados roubados da vítima, uma conta no CPF dela em outro banco e esvazia a conta verdadeira para lá. Só o mesmo CPF não basta: sem a conta antiga ou conhecida, o Pix é tratado como qualquer outro (`same_owner` fica no `metadata`). O custo: o cliente que abriu uma conta nova de verdade e transfere tudo para ela no dia seguinte passa por 2FA ou, num valor alto, é barrado. |
 
 Os bônus só reduzem a própria categoria e nunca a deixam negativa: confiar no destino não "paga" a dúvida sobre a identidade.
 

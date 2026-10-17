@@ -85,6 +85,8 @@ class History:
     source_inbound_amount: int = 0
     source_inbound_suspicious_payers: int = 0
     destination_mule_links: int = 0
+    # Quanto saiu desta conta desde o começo da noite (20h), antes deste Pix.
+    night_outflow: int = 0
 
 
 @dataclass(frozen=True)
@@ -95,7 +97,13 @@ class Signals:
     is_night: bool
     source_is_pf: bool
     destination_is_pf: bool
+    # same_owner: o mesmo CPF/CNPJ nos dois lados, e só isso.
+    # is_self_transfer: mesmo dono E conta de destino comprovadamente dele
+    # (antiga, ou já paga com aprovação há tempo). Só esta segunda ganha
+    # o tratamento de transferência entre contas próprias.
+    same_owner: bool
     is_self_transfer: bool
+    is_mature_payer: bool
     source_account_age_days: float
     destination_account_age_days: float
     has_history: bool
@@ -115,7 +123,9 @@ class Signals:
             "is_night": self.is_night,
             "source_is_pf": self.source_is_pf,
             "destination_is_pf": self.destination_is_pf,
+            "same_owner": self.same_owner,
             "is_self_transfer": self.is_self_transfer,
+            "is_mature_payer": self.is_mature_payer,
             "source_account_age_days": round(self.source_account_age_days, 2),
             "destination_account_age_days": round(self.destination_account_age_days, 2),
             "has_history": self.has_history,
@@ -143,6 +153,7 @@ class Signals:
             "source_inbound_amount_24h": self.history.source_inbound_amount,
             "source_inbound_suspicious_payers_24h": self.history.source_inbound_suspicious_payers,
             "destination_mule_links_30d": self.history.destination_mule_links,
+            "night_outflow_before_this_pix": self.history.night_outflow,
         }
 
 
@@ -164,6 +175,21 @@ def build_signals(facts: TransactionFacts, history: History) -> Signals:
     if history.counterparty_first_approved_at is not None:
         counterparty_relationship_days = _days_between(history.counterparty_first_approved_at, facts.transaction_date)
 
+    source_account_age_days = _days_between(facts.source_opening_date, facts.transaction_date)
+    destination_account_age_days = _days_between(facts.destination_opening_date, facts.transaction_date)
+
+    same_owner = facts.source_document_number == facts.destination_document_number
+    destination_is_proven_own = destination_account_age_days >= parameters.SELF_TRANSFER_MIN_DESTINATION_DAYS or (
+        counterparty_relationship_days is not None
+        and counterparty_relationship_days >= parameters.TRUSTED_COUNTERPARTY_MIN_DAYS
+    )
+    is_self_transfer = same_owner and destination_is_proven_own
+
+    is_mature_payer = (
+        source_account_age_days >= parameters.MATURE_ACCOUNT_DAYS
+        and history.approved_count_total >= parameters.MATURE_MIN_APPROVED
+    )
+
     travel_distance_km = None
     travel_speed_kmh = None
     travel_device_changed = False
@@ -183,9 +209,11 @@ def build_signals(facts: TransactionFacts, history: History) -> Signals:
         is_night=is_night_hour(local_date.hour),
         source_is_pf=is_pf(facts.source_document_number),
         destination_is_pf=is_pf(facts.destination_document_number),
-        is_self_transfer=facts.source_document_number == facts.destination_document_number,
-        source_account_age_days=_days_between(facts.source_opening_date, facts.transaction_date),
-        destination_account_age_days=_days_between(facts.destination_opening_date, facts.transaction_date),
+        same_owner=same_owner,
+        is_self_transfer=is_self_transfer,
+        is_mature_payer=is_mature_payer,
+        source_account_age_days=source_account_age_days,
+        destination_account_age_days=destination_account_age_days,
         has_history=has_history,
         is_new_device=is_new_device,
         profile_median=profile_median,
@@ -203,6 +231,16 @@ def local_datetime(moment: datetime) -> datetime:
         return moment.astimezone(DEFAULT_LOCAL_TIMEZONE)
 
     return moment
+
+
+def night_start(moment: datetime) -> datetime:
+    """Quando começou a noite em que este Pix acontece: as 20h de hoje, ou de ontem se já passou da meia-noite."""
+    local = local_datetime(moment)
+    start = local.replace(hour=parameters.NIGHT_START_HOUR, minute=0, second=0, microsecond=0)
+    if local.hour < parameters.NIGHT_START_HOUR:
+        start = start - timedelta(days=1)
+
+    return start
 
 
 def is_night_hour(hour: int) -> bool:

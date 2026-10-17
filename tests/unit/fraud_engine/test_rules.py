@@ -309,10 +309,10 @@ class TestTrust:
         assert "TRUSTED_COUNTERPARTY" not in rule_codes(make_signals(single))
         assert "TRUSTED_COUNTERPARTY" in rule_codes(make_signals(trusted))
 
-    def test_self_transfer_skips_destination_age(self):
+    def test_self_transfer_to_an_old_own_account_skips_destination_rules(self):
         signals = make_signals(
             destination_document_number="12345678909",
-            destination_opening_date=NOW - timedelta(days=1),
+            destination_opening_date=NOW - timedelta(days=p.SELF_TRANSFER_MIN_DESTINATION_DAYS),
             amount=100_000,
         )
         codes = rule_codes(signals)
@@ -320,3 +320,120 @@ class TestTrust:
         assert "SELF_TRANSFER" in codes
         assert "NEW_DESTINATION_ACCOUNT" not in codes
         assert "NEW_COUNTERPARTY" not in codes
+
+    def test_same_cpf_on_a_brand_new_account_is_not_a_self_transfer(self):
+        """Conta espelho: aberta ontem no CPF da vítima. Mesmo dono no papel, não na prática."""
+        signals = make_signals(
+            destination_document_number="12345678909",
+            destination_opening_date=NOW - timedelta(days=1),
+            amount=100_000,
+        )
+        codes = rule_codes(signals)
+
+        assert signals.same_owner is True
+        assert signals.is_self_transfer is False
+        assert "SELF_TRANSFER" not in codes
+        assert "NEW_DESTINATION_ACCOUNT" in codes
+
+    def test_new_own_account_already_paid_a_week_ago_is_a_self_transfer(self):
+        history = History(counterparty_approved_count=1, counterparty_first_approved_at=NOW - timedelta(days=8))
+        signals = make_signals(
+            history,
+            destination_document_number="12345678909",
+            destination_opening_date=NOW - timedelta(days=10),
+        )
+
+        assert "SELF_TRANSFER" in rule_codes(signals)
+
+
+MATURE = dict(approved_count_total=p.MATURE_MIN_APPROVED)
+
+
+class TestMaturePayer:
+    """Racha do bar, família no mesmo celular, folha de pagamento: conta madura não é robô."""
+
+    def test_maturity_needs_old_account_and_history(self):
+        assert make_signals(History(**MATURE)).is_mature_payer is True
+        assert make_signals(History(approved_count_total=p.MATURE_MIN_APPROVED - 1)).is_mature_payer is False
+        young = make_signals(History(**MATURE), source_opening_date=NOW - timedelta(days=p.MATURE_ACCOUNT_DAYS - 1))
+        assert young.is_mature_payer is False
+
+    def test_five_quick_pix_from_a_mature_account_ask_two_factor_instead_of_rejecting(self):
+        burst = History(attempts_short_window=p.VELOCITY_BOT_ATTEMPTS - 1, **MATURE)
+        signals = make_signals(burst)
+
+        assert "VELOCITY_BOT" not in rule_codes(signals)
+        assert "VELOCITY_BURST" in rule_codes(signals)
+
+    def test_mature_individual_is_still_blocked_at_ten(self):
+        signals = make_signals(History(attempts_short_window=p.VELOCITY_BOT_MATURE_PF_ATTEMPTS - 1, **MATURE))
+
+        assert find_hit(signals, "VELOCITY_BOT").hard is True
+
+    def test_mature_company_paying_payroll_has_a_higher_ceiling(self):
+        company = dict(source_document_number="11222333000181")
+        payroll = History(attempts_short_window=p.VELOCITY_BOT_MATURE_PF_ATTEMPTS, **MATURE)
+        robot = History(attempts_short_window=p.VELOCITY_BOT_MATURE_PJ_ATTEMPTS - 1, **MATURE)
+
+        assert "VELOCITY_BOT" not in rule_codes(make_signals(payroll, **company))
+        assert "VELOCITY_BOT" in rule_codes(make_signals(robot, **company))
+
+    def test_new_account_keeps_the_strict_limit(self):
+        assert "VELOCITY_BOT" in rule_codes(make_signals(History(attempts_short_window=p.VELOCITY_BOT_ATTEMPTS - 1)))
+
+    def test_family_of_three_on_one_phone_asks_two_factor(self):
+        hit = find_hit(make_signals(History(device_distinct_documents=3, **MATURE)), "DEVICE_FARM")
+
+        assert hit.hard is False
+        assert hit.points == p.DEVICE_FARM_MATURE_POINTS
+
+    def test_five_payers_on_one_phone_is_a_farm_even_for_mature_accounts(self):
+        hit = find_hit(make_signals(History(device_distinct_documents=p.DEVICE_FARM_HARD_DOCUMENTS, **MATURE)), "DEVICE_FARM")
+
+        assert hit.hard is True
+
+    def test_three_payers_with_a_new_account_is_still_a_farm(self):
+        assert find_hit(make_signals(History(device_distinct_documents=3)), "DEVICE_FARM").hard is True
+
+
+class TestNightTotal:
+    """Drenagem de madrugada espalhada por destinos diferentes, cada Pix abaixo do limite."""
+
+    NIGHT = NOW.replace(hour=1)
+
+    def test_night_sum_above_three_times_the_limit_weighs(self):
+        signals = make_signals(History(night_outflow=285_000), amount=95_000, transaction_date=self.NIGHT)
+
+        assert find_hit(signals, "NIGHT_TOTAL").points == p.NIGHT_TOTAL_POINTS
+
+    def test_below_the_soft_limit_nothing_happens(self):
+        signals = make_signals(History(night_outflow=190_000), amount=95_000, transaction_date=self.NIGHT)
+
+        assert "NIGHT_TOTAL" not in rule_codes(signals)
+
+    def test_night_sum_above_the_coercion_ceiling_blocks(self):
+        signals = make_signals(History(night_outflow=480_000), amount=95_000, transaction_date=self.NIGHT)
+
+        assert find_hit(signals, "NIGHT_TOTAL_HARD_LIMIT").hard is True
+        assert "NIGHT_TOTAL" not in rule_codes(signals)
+
+    def test_a_single_pix_above_the_night_limit_is_not_counted_twice(self):
+        signals = make_signals(History(night_outflow=250_000), amount=150_000, transaction_date=self.NIGHT)
+
+        assert "NIGHT_HIGH_VALUE" in rule_codes(signals)
+        assert "NIGHT_TOTAL" not in rule_codes(signals)
+
+    def test_daytime_and_companies_are_out(self):
+        day = make_signals(History(night_outflow=480_000), amount=95_000)
+        company = make_signals(
+            History(night_outflow=480_000), amount=95_000, transaction_date=self.NIGHT, source_document_number="11222333000181"
+        )
+
+        assert "NIGHT_TOTAL_HARD_LIMIT" not in rule_codes(day)
+        assert "NIGHT_TOTAL_HARD_LIMIT" not in rule_codes(company)
+
+    def test_night_starts_at_20h_of_the_previous_day_after_midnight(self):
+        from controllers.fraud_engine.signals import night_start
+
+        assert night_start(NOW.replace(hour=1)) == (NOW - timedelta(days=1)).replace(hour=20)
+        assert night_start(NOW.replace(hour=22)) == NOW.replace(hour=20)

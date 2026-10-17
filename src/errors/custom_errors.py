@@ -66,3 +66,21 @@ class FutureTransactionDate(QIException):
         description = f"transaction_date {transaction_date} is more than {tolerance_minutes} minutes in the future."
         translation = "A data do Pix está no futuro."
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class PixIdConflict(QIException):
+    """O `id` já foi analisado com outro conteúdo.
+
+    Reenviar o mesmo Pix devolve a análise gravada. Reaproveitar o `id`
+    com outro valor ou outro destino não é retry, e não pode herdar a
+    decisão do Pix original.
+    """
+
+    code = "QIT002006"
+
+    def __init__(self, pix_id) -> None:
+        title = "Pix Id Conflict"
+        http_status = 409
+        description = f"The Pix transaction {pix_id} was already analyzed with a different payload."
+        translation = f"O Pix {pix_id} já foi analisado com outro conteúdo."
+        super().__init__(title, self.code, http_status, description, translation)

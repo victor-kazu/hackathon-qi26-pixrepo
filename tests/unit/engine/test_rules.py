@@ -138,6 +138,44 @@ class TestVelocity:
         hit = find_hit(make_signals(History(rejected_recent=10)), "PROBING_AFTER_REJECTION")
         assert hit.points == p.PROBING_MAX_POINTS
 
+    def test_split_below_the_night_limit_to_one_destination(self):
+        at_23h = NOW.replace(hour=23)
+        two_parts = History(destination_parts_recent=2, destination_amount_recent=2 * 99_000)
+
+        hit = find_hit(make_signals(two_parts, transaction_date=at_23h, amount=99_000), "SPLIT_PAYMENT")
+
+        assert hit.points == p.SPLIT_POINTS
+        assert "NIGHT_HIGH_VALUE" not in rule_codes(make_signals(two_parts, transaction_date=at_23h, amount=99_000))
+
+    def test_split_needs_three_parts_and_a_sum_above_the_limit(self):
+        at_23h = NOW.replace(hour=23)
+        one_part = History(destination_parts_recent=1, destination_amount_recent=99_000)
+        small_parts = History(destination_parts_recent=2, destination_amount_recent=2 * 20_000)
+
+        assert "SPLIT_PAYMENT" not in rule_codes(make_signals(one_part, transaction_date=at_23h, amount=99_000))
+        assert "SPLIT_PAYMENT" not in rule_codes(make_signals(small_parts, transaction_date=at_23h, amount=20_000))
+
+    def test_split_uses_the_high_value_limit_during_the_day(self):
+        three_parts = History(destination_parts_recent=2, destination_amount_recent=2 * 200_000)
+
+        assert "SPLIT_PAYMENT" in rule_codes(make_signals(three_parts, amount=200_000))
+
+    def test_part_above_the_limit_is_left_to_the_limit_rule(self):
+        at_23h = NOW.replace(hour=23)
+        history = History(destination_parts_recent=2, destination_amount_recent=2 * 150_000)
+        codes = rule_codes(make_signals(history, transaction_date=at_23h, amount=150_000))
+
+        assert "NIGHT_HIGH_VALUE" in codes
+        assert "SPLIT_PAYMENT" not in codes
+
+    def test_equal_split_to_one_destination_is_not_counted_twice(self):
+        at_23h = NOW.replace(hour=23)
+        history = History(same_amount_recent=2, destination_parts_recent=2, destination_amount_recent=2 * 99_000)
+        codes = rule_codes(make_signals(history, transaction_date=at_23h, amount=99_000))
+
+        assert "SPLIT_PAYMENT" in codes
+        assert "STRUCTURING" not in codes
+
     def test_structuring_needs_three_equal_amounts(self):
         assert "STRUCTURING" not in rule_codes(make_signals(History(same_amount_recent=1)))
         assert "STRUCTURING" in rule_codes(make_signals(History(same_amount_recent=2)))
@@ -197,6 +235,23 @@ class TestDestination:
 
         assert signals.profile_median == 10_000
         assert find_hit(signals, "PROFILE_AMOUNT_SPIKE").points == p.PROFILE_SPIKE_POINTS
+
+    def test_high_value_without_profile_starts_at_5k(self):
+        hit = find_hit(make_signals(amount=p.HIGH_VALUE_AMOUNT), "HIGH_VALUE_WITHOUT_PROFILE")
+
+        assert "HIGH_VALUE_WITHOUT_PROFILE" not in rule_codes(make_signals(amount=p.HIGH_VALUE_AMOUNT - 1))
+        assert hit.points == p.HIGH_VALUE_POINTS
+
+    def test_high_value_is_left_to_the_profile_when_there_is_one(self):
+        history = History(approved_amounts_profile=[1_000_000] * p.PROFILE_MIN_TRANSACTIONS)
+        codes = rule_codes(make_signals(history, amount=2 * p.HIGH_VALUE_AMOUNT))
+
+        assert "HIGH_VALUE_WITHOUT_PROFILE" not in codes
+        assert "PROFILE_AMOUNT_SPIKE" not in codes
+
+    def test_high_value_threshold_is_higher_for_companies(self):
+        signals = make_signals(amount=2 * p.HIGH_VALUE_AMOUNT, source_document_number="11222333000181")
+        assert "HIGH_VALUE_WITHOUT_PROFILE" not in rule_codes(signals)
 
     def test_new_counterparty_only_above_minimum(self):
         assert "NEW_COUNTERPARTY" not in rule_codes(make_signals(amount=p.NEW_COUNTERPARTY_MIN_AMOUNT))

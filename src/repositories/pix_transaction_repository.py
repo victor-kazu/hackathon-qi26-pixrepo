@@ -139,6 +139,14 @@ class PixTransactionRepository:
         # SUM de BIGINT volta NUMERIC (Decimal) do Postgres; o motor trabalha em centavos inteiros.
         return int(query.with_entities(func.coalesce(func.sum(PixTransaction.amount), 0)).scalar())
 
+    def get_destination_recent_stats(self, facts: TransactionFacts, window: timedelta) -> Tuple[int, int]:
+        """Quantos Pix e quanto dinheiro saíram desta conta para este destino na janela."""
+        query = self._source_query(facts, window, MONEY_OUT_STATUSES).filter(self._destination_filter(facts))
+        count, total = query.with_entities(
+            func.count(PixTransaction.id), func.coalesce(func.sum(PixTransaction.amount), 0)
+        ).one()
+        return count, int(total)
+
     def get_counterparty_stats(self, facts: TransactionFacts) -> Tuple[int, Optional[datetime]]:
         query = self._source_query(facts, None, [PixAnalysisStatus.APPROVED]).filter(self._destination_filter(facts))
         count, first_date = query.with_entities(

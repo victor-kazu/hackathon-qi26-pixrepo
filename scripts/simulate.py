@@ -1,7 +1,7 @@
 """Simulação de tráfego: clientes bons + ataques, e o que o motor decidiu.
 
 Gera 60 dias de histórico de clientes comuns (aluguel, mercado, amigos)
-e, no último dia, mistura o uso normal com seis tipos de fraude. Manda
+e, no último dia, mistura o uso normal com sete tipos de fraude. Manda
 tudo para a API em ordem cronológica e mede, por cenário, quanto foi
 aprovado, desafiado com 2FA ou rejeitado.
 
@@ -41,6 +41,7 @@ SCENARIOS_FRAUD = [
     "robô em rajada",
     "fracionamento",
     "fazenda de aparelhos",
+    "fracionamento noturno",
 ]
 
 
@@ -188,6 +189,15 @@ def generate_eval_day(customers, eval_day):
         destination = account("60701190", eval_day - timedelta(days=10))
         events.append((pix(start + timedelta(minutes=10 * step), random.uniform(20_000, 90_000), laranja, destination),
                        SCENARIOS_FRAUD[5], True))
+
+    # Fracionamento noturno: pedaços abaixo do limite noturno de R$ 1.000,
+    # todos para a mesma conta. Cada pedaço sozinho é um Pix normal.
+    for customer in customers[len(customers) // 3: len(customers) // 3 + chunk]:
+        start = daytime(eval_day, 21, 23)
+        destination = account("60701190", eval_day - timedelta(days=random.randint(60, 300)))
+        for step in range(3):
+            amount = random.randint(95_000, 99_900)
+            events.append((pix(start + timedelta(minutes=20 * step), amount, customer, destination), SCENARIOS_FRAUD[6], True))
 
     return events
 

@@ -7,7 +7,7 @@ análise, e é o que permite explicar uma decisão antiga com a regra que
 valia no dia.
 """
 
-POLICY_VERSION = "2026.10.17-v1"
+POLICY_VERSION = "2026.10.17-v2"
 
 REAIS = 100
 
@@ -84,6 +84,15 @@ STRUCTURING_WINDOW_MINUTES = 60
 STRUCTURING_MIN_REPETITIONS = 3
 STRUCTURING_POINTS = 20
 
+# Fracionamento para o mesmo destino: partir um valor em pedaços abaixo
+# do limite e mandar todos para a mesma conta. É o drible clássico do
+# limite noturno (3 x R$ 990 às 23h). Os pedaços somados são tratados
+# como o Pix que eles formam: se a soma passa do limite que valeria para
+# um Pix só, pesa como o próprio limite pesaria (40 = pede 2FA).
+SPLIT_WINDOW_MINUTES = 60
+SPLIT_MIN_PARTS = 3
+SPLIT_POINTS = 40
+
 # ─── Perfil do pagador ──────────────────────────────────────────────
 PROFILE_WINDOW_DAYS = 90
 # Com menos de 5 Pix aprovados não existe "padrão" a comparar: uma
@@ -96,6 +105,16 @@ PROFILE_SPIKE_RATIO = 3
 PROFILE_SPIKE_POINTS = 20
 PROFILE_EXTREME_RATIO = 10
 PROFILE_EXTREME_POINTS = 35
+
+# Valor alto de quem ainda não tem perfil. Sem histórico não dá para
+# dizer que o valor é "fora do padrão", mas é onde a fraude dói: pesa
+# moderado, para que só junto de outro sinal chegue ao 2FA. Primeiro
+# Pix de valor baixo continua sem ponto nenhum. Não há degrau acima: a
+# partir de R$ 10 mil o DAILY_EXPOSURE (metade do teto diário) já soma.
+# PJ movimenta mais por natureza, então o valor é 10x maior.
+HIGH_VALUE_AMOUNT = 5_000 * REAIS
+HIGH_VALUE_POINTS = 20
+HIGH_VALUE_PJ_MULTIPLIER = 10
 
 # ─── Aparelho ───────────────────────────────────────────────────────
 # Um aparelho só vira "conhecido" depois de ter um Pix aprovado nesta

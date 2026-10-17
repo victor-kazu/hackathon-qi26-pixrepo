@@ -68,6 +68,8 @@ class History:
     attempts_long_window: int = 0
     rejected_recent: int = 0
     same_amount_recent: int = 0
+    destination_parts_recent: int = 0
+    destination_amount_recent: int = 0
     approved_amounts_profile: List[int] = field(default_factory=list)
     exposure_24h: int = 0
     counterparty_approved_count: int = 0
@@ -119,6 +121,8 @@ class Signals:
             "attempts_last_1h": self.history.attempts_long_window,
             "rejected_last_1h": self.history.rejected_recent,
             "same_amount_last_1h": self.history.same_amount_recent,
+            "same_destination_pix_last_1h": self.history.destination_parts_recent,
+            "same_destination_amount_last_1h": self.history.destination_amount_recent,
             "profile_transactions": len(self.history.approved_amounts_profile),
             "profile_median": self.profile_median,
             "profile_ratio": _round_or_none(self.profile_ratio),

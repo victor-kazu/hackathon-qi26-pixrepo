@@ -76,6 +76,16 @@ class TestIdempotency:
         assert second_status == 200
         assert second == first
 
+    def test_same_id_with_another_amount_is_a_conflict(self):
+        payload = PayloadGenerator.create_pix_payload(amount=10_000)
+        RequestGenerator.POST_pix_transaction(payload)
+
+        payload["amount"] = 900_000
+        status, response = RequestGenerator.POST_pix_transaction(payload)
+
+        assert status == 409
+        assert response["code"] == "QIT002006"
+
     def test_retry_does_not_count_as_a_new_attempt(self):
         source_account = PayloadGenerator.create_account()
         payload = PayloadGenerator.create_pix_payload(source_account=source_account)

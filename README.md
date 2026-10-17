@@ -26,14 +26,14 @@ POST /pix/transaction
 resource ── valida o formato (JSON Schema)
    │
    ▼
-controller ── valida o conteúdo (CPF/CNPJ, datas)  ── mesmo id já analisado? devolve a mesma análise
+controller ── valida o conteúdo (CPF/CNPJ, datas)  ── mesmo id já analisado? devolve a mesma análise (409 se o conteúdo mudou)
    │          trava a conta pagadora (lock por conta)
    │
-   ├──► repository ── 15 consultas de histórico, todas "até a data deste Pix"
+   ├──► repository ── 16 consultas de histórico, todas "até a data deste Pix"
    │                  (pagador, destino, par pagador→destino, aparelho, IP)
    ▼
 engine/signals.py ── monta os sinais (idade das contas, hora local, mediana, velocidade geográfica...)
-engine/rules.py   ── 23 regras: 6 duras, 15 de pontos, 2 bônus de confiança
+engine/rules.py   ── 25 regras: 6 duras, 17 de pontos, 2 bônus de confiança
 engine/policy.py  ── soma identidade e destino separadamente e decide
    │
    ▼
@@ -76,6 +76,7 @@ Valores em reais; no código ficam em centavos, em `src/engine/parameters.py`, c
 | `PROBING_AFTER_REJECTION` | Pix rejeitados desta conta na última hora | +20 por rejeição, máx. +40 | Tentar de novo logo depois de ser barrado é o fraudador procurando o valor que passa. |
 | `IMPOSSIBLE_TRAVEL` | Igual à regra dura, mas no mesmo aparelho | +45 | No mesmo aparelho pode ser GPS falsificado ou VPN, então pede confirmação em vez de barrar. |
 | `NEW_SOURCE_ACCOUNT` | Conta pagadora recém-aberta movimentando ≥ R$ 1.000 | < 2 dias → +35; < 7 dias → +25 | Identidade sintética ou conta aberta só para girar dinheiro de golpe. |
+| `SPLIT_PAYMENT` | Pix desta conta para o **mesmo destino** em 1 h (aprovados + 2FA), contando o atual. Cada pedaço abaixo do limite, a soma acima | ≥ 3 pedaços → +40. Limite: R$ 1.000 à noite (PF); R$ 5.000 de dia (PJ: R$ 50.000) | Partir o valor para passar por baixo do limite noturno é o drible clássico (3 x R$ 990 às 23h). A soma é tratada como o Pix que ela forma, e pesa o mesmo que o limite pesaria: pede 2FA. |
 | `SHARED_DEVICE` | 2 pagadores distintos no mesmo aparelho em 30 dias | +15 | Sinal fraco por si só (família), mas soma com outros. |
 | `SHARED_IP` | Pagadores distintos no mesmo IP em 24 h | ≥ 5 → +10 | IP é sinal fraco: operadora põe milhares de clientes atrás do mesmo IP (CGNAT). |
 
@@ -87,7 +88,8 @@ Valores em reais; no código ficam em centavos, em `src/engine/parameters.py`, c
 | `DESTINATION_FAN_IN` | Pagadores distintos para a mesma conta destino em 24 h, contando o atual | PF: ≥ 5 → +35, ≥ 10 → +50. PJ: limiares 10x | Muitos CPFs pagando a mesma pessoa física numa tarde é golpe em massa em andamento. Comércio (CNPJ) recebe de muita gente por natureza. |
 | `FLAGGED_DESTINATION` | Pix para este destino rejeitados nos últimos 30 dias, vindos de **outros** pagadores | ≥ 1 → +35; ≥ 3 → +50 | Reputação de rede: se alguém já foi barrado pagando essa conta, a próxima vítima está a caminho. |
 | `PROFILE_AMOUNT_SPIKE` | Valor ÷ mediana dos aprovados em 90 dias (piso de R$ 100). Só com ≥ 5 Pix no histórico | > 3x → +20; > 10x → +35 | A vítima de golpe manda um valor fora do seu padrão. Com menos de 5 Pix não existe padrão, e a regra fica neutra. |
-| `STRUCTURING` | Pix de valor idêntico desta conta na última hora, contando o atual | ≥ 3 → +20 | Fracionar uma quantia em partes iguais para ficar abaixo dos tetos. |
+| `HIGH_VALUE_WITHOUT_PROFILE` | Valor alto de quem ainda não tem perfil (menos de 5 Pix aprovados em 90 dias); não vale para mesma titularidade | PF ≥ R$ 5.000 → +20 (PJ ≥ R$ 50.000) | Sem histórico não dá para dizer que o valor é "fora do padrão", mas é onde a fraude dói. Pesa moderado: primeiro Pix de valor baixo continua sem ponto, e o valor alto só chega ao 2FA junto de outro sinal (acima de R$ 10 mil, o `DAILY_EXPOSURE` já soma). |
+| `STRUCTURING` | Pix de valor idêntico desta conta na última hora, contando o atual | ≥ 3 → +20 | Fracionar uma quantia em partes iguais para ficar abaixo dos tetos. Se os pedaços vão para o mesmo destino, quem pontua é o `SPLIT_PAYMENT`, para não contar duas vezes. |
 | `DAILY_EXPOSURE` | Soma de 24 h acima da metade do teto diário | +20 | Avisa antes do teto duro. |
 | `NEW_COUNTERPARTY` | Primeiro Pix desta conta para este destino | > R$ 500 → +10 | Todo mundo paga alguém pela primeira vez, então é fraco e só soma a outros sinais. |
 
@@ -176,14 +178,14 @@ A resposta segue o contrato e explica a decisão na `metadata`:
 
 Duas garantias de consistência:
 
-- **Idempotência.** `pix_id` é único. O mesmo `id` chegando de novo (retry de rede, clique duplo) devolve a análise já gravada com HTTP 200, em vez de analisar de novo, o que daria outra decisão porque o primeiro Pix já estaria contando na velocity.
+- **Idempotência.** `pix_id` é único. O mesmo `id` chegando de novo (retry de rede, clique duplo) devolve a análise já gravada com HTTP 200, em vez de analisar de novo, o que daria outra decisão porque o primeiro Pix já estaria contando na velocity. Retry é o mesmo Pix: o mesmo `id` com outro conteúdo devolve 409, comparando com o payload original gravado em `raw_payload`. Sem isso, bastaria reaproveitar o `id` de um Pix aprovado para "aprovar" outro valor ou outro destino.
 - **Concorrência.** O controller pega um `pg_advisory_xact_lock` pela conta pagadora antes de ler o histórico. Sem isso, cinco Pix simultâneos da mesma conta leriam o mesmo histórico vazio e passariam todos pela velocity. Contas diferentes continuam em paralelo.
 
 Validações que devolvem 422: CPF/CNPJ com dígito verificador inválido, data que não existe no calendário, conta aberta depois do Pix e Pix com data no futuro (mais de 2 min), que serviria para plantar histórico adiantado.
 
 ## Simulação: como calibramos
 
-`scripts/simulate.py` gera 60 dias de histórico de 150 clientes comuns (mercado, amigos, aluguel) e, no último dia, mistura o uso normal com seis tipos de ataque. Tudo é enviado para a API em ordem cronológica. Resultado com `--seed 42` (3.944 Pix, medindo só o último dia):
+`scripts/simulate.py` gera 60 dias de histórico de 150 clientes comuns (mercado, amigos, aluguel) e, no último dia, mistura o uso normal com sete tipos de ataque. Tudo é enviado para a API em ordem cronológica. Resultado com `--seed 42` (3.968 Pix, medindo só o último dia):
 
 | Cenário | Pix | Aprovado | 2FA | Rejeitado |
 |---|---:|---:|---:|---:|
@@ -194,8 +196,11 @@ Validações que devolvem 422: CPF/CNPJ com dígito verificador inválido, data 
 | Robô em rajada | 64 | 37,5% | 12,5% | 50,0% |
 | Fracionamento | 32 | 28,1% | 40,6% | 31,2% |
 | Fazenda de aparelhos | 6 | 33,3% | 0,0% | 66,7% |
+| Fracionamento noturno (3 x ~R$ 980 para a mesma conta) | 24 | 66,7% | 33,3% | 0,0% |
 
-79% das tentativas de fraude foram paradas (2FA ou rejeição) e 93% do valor fraudado não passou direto, com 1,8% de clientes bons desafiados e nenhum rejeitado. Latência do motor: p50 de 22 ms e p99 de 32 ms.
+73% das tentativas de fraude foram paradas (2FA ou rejeição) e 85% do valor fraudado não passou direto, com 1,8% de clientes bons desafiados e nenhum rejeitado. Latência do motor: p50 de 23 ms e p99 de 34 ms.
+
+No fracionamento noturno, todo terceiro pedaço caiu no 2FA pelo `SPLIT_PAYMENT`; os dois primeiros são Pix normais e passam, e é por isso que a taxa geral cai em relação à versão anterior da simulação, sem nenhum cenário antigo ter piorado.
 
 A simulação mudou dois parâmetros: com o corte de destino em 70, dois terços dos golpes para conta laranja só pediam 2FA (que a vítima passaria), e ele caiu para 60; a 4ª tentativa em 5 min passou a pedir 2FA sozinha. Nenhuma das duas mudanças aumentou a fricção dos clientes legítimos.
 
@@ -247,7 +252,7 @@ curl http://localhost:3000/pix/transaction/pix-000123 -H "INTERNAL-TOKEN: defaul
 
 | Rota | Resposta |
 |---|---|
-| `POST /pix/transaction` | 201 com a análise; 200 se o `id` já foi analisado; 400 para payload fora do schema; 422 para documento ou data inválidos |
+| `POST /pix/transaction` | 201 com a análise; 200 se o `id` já foi analisado com o mesmo conteúdo; 409 se foi analisado com outro conteúdo; 400 para payload fora do schema; 422 para documento ou data inválidos |
 | `GET /pix/transaction/{id}` | 200 com a análise gravada; 404 se o Pix não existe |
 
 ## Estrutura

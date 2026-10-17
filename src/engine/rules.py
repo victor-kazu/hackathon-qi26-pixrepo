@@ -12,7 +12,7 @@ bônus de confiança são pontos negativos.
 """
 
 from dataclasses import dataclass
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 from engine import parameters as p
 from engine.signals import Signals
@@ -199,6 +199,26 @@ def new_source_account(signals: Signals) -> Optional[RuleHit]:
     return None
 
 
+def split_payment(signals: Signals) -> Optional[RuleHit]:
+    if signals.is_self_transfer:
+        return None
+
+    parts = signals.history.destination_parts_recent + 1
+    total = signals.history.destination_amount_recent + signals.facts.amount
+    if parts < p.SPLIT_MIN_PARTS:
+        return None
+
+    # Um pedaço acima do limite já é pego pela regra do próprio limite.
+    limit, limit_name = _split_limit(signals)
+    if signals.facts.amount <= limit < total:
+        return RuleHit(
+            "SPLIT_PAYMENT", IDENTITY, p.SPLIT_POINTS, False,
+            f"{parts} Pix para o mesmo destino em {p.SPLIT_WINDOW_MINUTES} min somando {_reais(total)}, "
+            f"acima do {limit_name} de {_reais(limit)}",
+        )
+    return None
+
+
 def shared_device(signals: Signals) -> Optional[RuleHit]:
     documents = signals.history.device_distinct_documents
     if p.DEVICE_SHARED_DOCUMENTS <= documents < p.DEVICE_FARM_DOCUMENTS:
@@ -294,7 +314,29 @@ def profile_amount_spike(signals: Signals) -> Optional[RuleHit]:
     )
 
 
+def high_value_without_profile(signals: Signals) -> Optional[RuleHit]:
+    # Com perfil, quem cuida do valor é o PROFILE_AMOUNT_SPIKE.
+    if signals.profile_ratio is not None or signals.is_self_transfer:
+        return None
+
+    multiplier = 1 if signals.source_is_pf else p.HIGH_VALUE_PJ_MULTIPLIER
+    amount = signals.facts.amount
+    threshold = p.HIGH_VALUE_AMOUNT * multiplier
+    if amount < threshold:
+        return None
+
+    return RuleHit(
+        "HIGH_VALUE_WITHOUT_PROFILE", BENEFICIARY, p.HIGH_VALUE_POINTS, False,
+        f"{_reais(amount)} a partir de {_reais(threshold)}, sem histórico para comparar "
+        f"(menos de {p.PROFILE_MIN_TRANSACTIONS} Pix aprovados)",
+    )
+
+
 def structuring(signals: Signals) -> Optional[RuleHit]:
+    # Valores iguais para o mesmo destino já são SPLIT_PAYMENT: não conta duas vezes.
+    if split_payment(signals) is not None:
+        return None
+
     repetitions = signals.history.same_amount_recent + 1
     if repetitions >= p.STRUCTURING_MIN_REPETITIONS:
         return RuleHit(
@@ -357,6 +399,15 @@ def _daily_limit(signals: Signals) -> int:
     return p.DAILY_PJ_HARD_LIMIT
 
 
+def _split_limit(signals: Signals) -> Tuple[int, str]:
+    """O limite que os pedaços somados estão tentando driblar."""
+    if signals.is_night and signals.source_is_pf:
+        return p.NIGHT_PF_LIMIT, "limite noturno"
+
+    multiplier = 1 if signals.source_is_pf else p.HIGH_VALUE_PJ_MULTIPLIER
+    return p.HIGH_VALUE_AMOUNT * multiplier, "valor alto"
+
+
 def _is_impossible_travel(signals: Signals) -> bool:
     if signals.travel_speed_kmh is None:
         return False
@@ -380,12 +431,14 @@ RULES: List[Callable[[Signals], Optional[RuleHit]]] = [
     new_device,
     impossible_travel,
     new_source_account,
+    split_payment,
     shared_device,
     shared_ip,
     new_destination_account,
     destination_fan_in,
     flagged_destination,
     profile_amount_spike,
+    high_value_without_profile,
     structuring,
     daily_exposure,
     new_counterparty,

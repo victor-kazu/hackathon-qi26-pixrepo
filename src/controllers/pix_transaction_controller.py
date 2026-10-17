@@ -13,6 +13,7 @@ from errors import (
     InvalidDate,
     InvalidDocumentNumber,
     NotFoundPixTransaction,
+    PixIdConflict,
 )
 from repositories import PixTransactionRepository
 from utils.document_number import is_valid_document, only_digits
@@ -36,12 +37,15 @@ class PixTransactionController(BaseController):
         (timeout de rede, cliente apertando duas vezes). A resposta é a
         análise já gravada: analisar de novo daria outra decisão, porque
         o primeiro Pix já entrou no histórico e contaria na velocity.
+        Só que retry é o MESMO Pix: o mesmo `id` com outro conteúdo é
+        conflito (409), senão bastaria reaproveitar o `id` de um Pix
+        aprovado para "aprovar" outro valor ou outro destino.
         """
         started_at = perf_counter()
 
         existing_analysis = self.pix_transaction_repository.get_analysis_by_pix_id(payload["id"])
         if existing_analysis is not None:
-            return PixAnalysisDTO.obj_to_dict(existing_analysis), False
+            return self._replay(existing_analysis, payload), False
 
         facts = self._to_facts(payload)
 
@@ -51,7 +55,7 @@ class PixTransactionController(BaseController):
         # esperava o lock.
         existing_analysis = self.pix_transaction_repository.get_analysis_by_pix_id(facts.pix_id)
         if existing_analysis is not None:
-            return PixAnalysisDTO.obj_to_dict(existing_analysis), False
+            return self._replay(existing_analysis, payload), False
 
         signals = build_signals(facts, self._collect_history(facts))
         decision = decide(signals)
@@ -78,9 +82,19 @@ class PixTransactionController(BaseController):
 
         return PixAnalysisDTO.obj_to_dict(pix_analysis)
 
+    def _replay(self, existing_analysis, payload: dict) -> dict:
+        # O payload gravado é o JSON que chegou; comparar dicts ignora a ordem das chaves.
+        if existing_analysis.pix_transaction.raw_payload != payload:
+            raise PixIdConflict(payload["id"])
+
+        return PixAnalysisDTO.obj_to_dict(existing_analysis)
+
     def _collect_history(self, facts: TransactionFacts) -> History:
         repository = self.pix_transaction_repository
         counterparty_count, counterparty_first_date = repository.get_counterparty_stats(facts)
+        destination_parts, destination_amount = repository.get_destination_recent_stats(
+            facts, timedelta(minutes=p.SPLIT_WINDOW_MINUTES)
+        )
 
         return History(
             approved_count_total=repository.count_source_approved(facts),
@@ -96,6 +110,8 @@ class PixTransactionController(BaseController):
             same_amount_recent=repository.count_source_same_amount(
                 facts, timedelta(minutes=p.STRUCTURING_WINDOW_MINUTES)
             ),
+            destination_parts_recent=destination_parts,
+            destination_amount_recent=destination_amount,
             approved_amounts_profile=repository.list_source_approved_amounts(
                 facts, timedelta(days=p.PROFILE_WINDOW_DAYS)
             ),

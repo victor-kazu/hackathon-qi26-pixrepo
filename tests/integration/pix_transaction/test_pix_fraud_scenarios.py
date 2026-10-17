@@ -221,6 +221,45 @@ class TestScams:
 
         assert "STRUCTURING" in rules_of(responses[2])
 
+    def test_splitting_under_the_night_limit_to_one_destination(self):
+        """3 x R$ 990 às 23h para a mesma conta: cada um passa, a soma não."""
+        source_account = PayloadGenerator.create_account()
+        destination = PayloadGenerator.create_account(participant="60701190")
+        device_id = new_device()
+        ObjectGenerator.build_history(
+            source_account,
+            PayloadGenerator.create_account(participant="18236120"),
+            device_id,
+            days_ago=[30, 20],
+            amount=10_000,
+        )
+        responses = []
+        for minute in (0, 20, 40):
+            responses.append(
+                ObjectGenerator.analyze_pix(
+                    amount=99_000,
+                    transaction_date=PayloadGenerator.daytime(days_ago=1, hour=22, minute=minute),
+                    source_account=source_account,
+                    destination_account=destination,
+                    device_id=device_id,
+                )
+            )
+
+        assert [response["status"] for response in responses[:2]] == ["approved", "approved"]
+        assert responses[2]["status"] == "two_factor_required"
+        assert "SPLIT_PAYMENT" in rules_of(responses[2])
+        assert "STRUCTURING" not in rules_of(responses[2])
+
+    def test_high_value_without_history_weighs_but_does_not_block_alone(self):
+        """R$ 6 mil soma 30 e passa; R$ 15 mil já é mais da metade do teto diário e pede 2FA."""
+        high = ObjectGenerator.analyze_pix(amount=600_000)
+        higher = ObjectGenerator.analyze_pix(amount=1_500_000)
+
+        assert high["status"] == "approved"
+        assert rules_of(high) == ["HIGH_VALUE_WITHOUT_PROFILE", "NEW_COUNTERPARTY"]
+        assert higher["status"] == "two_factor_required"
+        assert rules_of(higher) == ["HIGH_VALUE_WITHOUT_PROFILE", "DAILY_EXPOSURE", "NEW_COUNTERPARTY"]
+
     def test_history_is_read_at_the_pix_date_not_today(self):
         """Um Pix antigo não enxerga o que aconteceu depois dele."""
         destination = PayloadGenerator.create_account(participant="60701190")

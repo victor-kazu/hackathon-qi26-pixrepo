@@ -29,11 +29,11 @@ resource ── valida o formato (JSON Schema)
 controller ── valida o conteúdo (CPF/CNPJ, datas)  ── mesmo id já analisado? devolve a mesma análise (409 se o conteúdo mudou)
    │          trava a conta pagadora (lock por conta)
    │
-   ├──► repository ── 18 consultas de histórico, todas "até a data deste Pix"
+   ├──► repository ── 19 consultas de histórico, todas "até a data deste Pix"
    │                  (pagador, destino, par pagador→destino, aparelho, IP, cadeia de laranjas)
    ▼
 controllers/fraud_engine/signals.py ── monta os sinais (idade das contas, hora local, mediana, velocidade geográfica...)
-controllers/fraud_engine/rules.py   ── 27 regras: 6 duras, 19 de pontos, 2 bônus de confiança
+controllers/fraud_engine/rules.py   ── 29 regras: 7 duras, 20 de pontos, 2 bônus de confiança
 controllers/fraud_engine/policy.py  ── soma identidade e destino separadamente e decide
    │
    ▼
@@ -78,7 +78,7 @@ Valores em reais; no código ficam em centavos, em `src/controllers/fraud_engine
 | `PROBING_AFTER_REJECTION` | Pix rejeitados desta conta na última hora | +20 por rejeição, máx. +40 | Tentar de novo logo depois de ser barrado é o fraudador procurando o valor que passa. |
 | `IMPOSSIBLE_TRAVEL` | Igual à regra dura, mas no mesmo aparelho | +45 | No mesmo aparelho pode ser GPS falsificado ou VPN, então pede confirmação em vez de barrar. |
 | `NEW_SOURCE_ACCOUNT` | Conta pagadora recém-aberta movimentando ≥ R$ 1.000 | < 2 dias → +35; < 7 dias → +25 | Identidade sintética ou conta aberta só para girar dinheiro de golpe. |
-| `HIGH_VALUE_WITHOUT_PROFILE` | Valor alto de quem ainda não tem perfil (menos de 5 Pix aprovados em 90 dias); não vale para mesma titularidade | PF ≥ R$ 5.000 → +30 (PJ ≥ R$ 50.000) | Sem histórico não dá para dizer que o valor é fora do padrão, nem que é mesmo o cliente: conta parada que de repente manda R$ 6 mil é o retrato da conta tomada. Junto do primeiro Pix para o destino (+10) chega aos 40 do 2FA. Primeiro Pix de valor baixo continua sem ponto, e o aluguel recorrente (bônus de −30) passa. |
+| `HIGH_VALUE_WITHOUT_PROFILE` | Valor alto de quem ainda não tem perfil (menos de 5 Pix aprovados em 90 dias); não vale para transferência entre contas próprias (veja `SELF_TRANSFER`) | PF ≥ R$ 5.000 → +30 (PJ ≥ R$ 50.000) | Sem histórico não dá para dizer que o valor é fora do padrão, nem que é mesmo o cliente: conta parada que de repente manda R$ 6 mil é o retrato da conta tomada. Junto do primeiro Pix para o destino (+10) chega aos 40 do 2FA. Primeiro Pix de valor baixo continua sem ponto, e o aluguel recorrente (bônus de −30) passa. |
 | `SPLIT_PAYMENT` | Pix desta conta para o **mesmo destino** em 1 h (aprovados + 2FA), contando o atual. Cada pedaço abaixo do limite, a soma acima | ≥ 3 pedaços → +40. Limite: R$ 1.000 à noite (PF); R$ 5.000 de dia (PJ: R$ 50.000) | Partir o valor para passar por baixo do limite noturno é o drible clássico (3 x R$ 990 às 23h). A soma é tratada como o Pix que ela forma, e pesa o mesmo que o limite pesaria: pede 2FA. |
 | `SHARED_DEVICE` | 2 pagadores distintos no mesmo aparelho em 30 dias | +15 | Sinal fraco por si só (família), mas soma com outros. |
 | `SHARED_IP` | Pagadores distintos no mesmo IP em 24 h | ≥ 5 → +10 | IP é sinal fraco: operadora põe milhares de clientes atrás do mesmo IP (CGNAT). |
@@ -87,7 +87,7 @@ Valores em reais; no código ficam em centavos, em `src/controllers/fraud_engine
 
 | Regra | Lógica | Parâmetros | Por quê |
 |-------|--------|------------|---------|
-| `NEW_DESTINATION_ACCOUNT` | Idade da conta destino na data do Pix (não vale para mesma titularidade) | < 7 dias → +30; < 30 dias → +15 | Conta laranja nasce para receber um golpe e é abandonada em dias. |
+| `NEW_DESTINATION_ACCOUNT` | Idade da conta destino na data do Pix (não vale para transferência entre contas próprias; veja `SELF_TRANSFER`) | < 7 dias → +30; < 30 dias → +15 | Conta laranja nasce para receber um golpe e é abandonada em dias. |
 | `DESTINATION_FAN_IN` | Pagadores distintos para a mesma conta destino em 24 h, contando o atual | PF: ≥ 5 → +35, ≥ 10 → +50. PJ: limiares 10x | Muitos CPFs pagando a mesma pessoa física numa tarde é golpe em massa em andamento. Comércio (CNPJ) recebe de muita gente por natureza. |
 | `FLAGGED_DESTINATION` | **Outros** pagadores distintos que tiveram Pix para este destino rejeitado por risco do destino (destino ≥ 60) nos últimos 30 dias | ≥ 1 → +35; ≥ 3 → +50 | Reputação de rede: se alguém já foi barrado pagando essa conta, a próxima vítima está a caminho. Só conta rejeição causada pelo destino (o celular roubado tentando pagar a mãe da vítima não suja a conta da mãe) e conta pessoas, não tentativas, para que ninguém consiga marcar a conta de um inocente insistindo sozinho. É pontuação com janela, e não blacklist permanente, porque uma lista dura se alimenta sozinha: a conta marcada passa a ter tudo rejeitado e nunca sai. Uma lista de fraude confirmada (analista ou marcação de fraude do BC no DICT) seria a evolução, mas exige uma rota de cadastro fora do escopo. |
 | `PROFILE_AMOUNT_SPIKE` | Valor ÷ mediana dos aprovados em 90 dias (piso de R$ 100). Só com ≥ 5 Pix no histórico | > 3x → +20; > 10x → +35 | A vítima de golpe manda um valor fora do seu padrão. Com menos de 5 Pix não existe padrão, e a regra fica neutra. |
@@ -121,7 +121,7 @@ Os bônus só reduzem a própria categoria e nunca a deixam negativa: confiar no
 
 É um sistema de pontuação em duas camadas.
 
-1. **Regras duras** não somam pontos. Se uma delas dispara, o Pix é `rejected` na hora, seja qual for o resto (ex.: 5ª tentativa em 5 minutos, Pix de pessoa física acima de R$ 5.000 à noite).
+1. **Regras duras** não somam pontos. Se uma delas dispara, o Pix é `rejected` na hora, seja qual for o resto (ex.: 5ª tentativa em 5 minutos de uma conta nova, Pix de pessoa física acima de R$ 5.000 à noite).
 2. **Regras de pontuação** somam pontos em uma de duas contas separadas:
    - **identidade**: é mesmo o cliente quem está pagando? O 2FA resolve essa dúvida.
    - **destino**: para onde vai o dinheiro? O 2FA não resolve, porque no golpe de engenharia social quem paga é o próprio cliente, e ele passa no 2FA.
@@ -171,7 +171,7 @@ A resposta segue o contrato e explica a decisão na `metadata`:
     ],
     "signals": {"local_hour": 22, "is_night": true, "destination_account_age_days": 7.55, "...": "..."},
     "thresholds": {"two_factor_required": 40, "rejected": 90, "rejected_by_beneficiary": 60},
-    "policy_version": "2026.10.17-v1",
+    "policy_version": "2026.10.17-v7",
     "processing_time_ms": 21.4,
     "pix_id": "pix-000123"
   }
@@ -194,9 +194,9 @@ A resposta segue o contrato e explica a decisão na `metadata`:
 Duas garantias de consistência:
 
 - **Idempotência.** `pix_id` é único. O mesmo `id` chegando de novo (retry de rede, clique duplo) devolve a análise já gravada com HTTP 200, em vez de analisar de novo, o que daria outra decisão porque o primeiro Pix já estaria contando na velocity. Retry é o mesmo Pix: o mesmo `id` com outro conteúdo devolve 409, comparando com o payload original gravado em `raw_payload`. Sem isso, bastaria reaproveitar o `id` de um Pix aprovado para "aprovar" outro valor ou outro destino.
-- **Concorrência.** O controller pega um `pg_advisory_xact_lock` pela conta pagadora antes de ler o histórico. Sem isso, cinco Pix simultâneos da mesma conta leriam o mesmo histórico vazio e passariam todos pela velocity. Contas diferentes continuam em paralelo.
+- **Concorrência.** O controller pega um `pg_advisory_xact_lock` pela conta pagadora antes de ler o histórico. Sem isso, cinco Pix simultâneos da mesma conta leriam o mesmo histórico vazio e passariam todos pela velocity. Contas diferentes continuam em paralelo. Como o lock é por conta, o mesmo `id` chegando **ao mesmo tempo** por contas pagadoras diferentes não se espera: quem barra o segundo é o `UNIQUE(pix_id)`, e esse request desfaz tudo o que fez e responde com a análise que ficou (200 se o conteúdo é o mesmo, 409 se é outro), em vez de virar erro 500.
 
-Validações que devolvem 422: CPF/CNPJ com dígito verificador inválido, data que não existe no calendário, conta aberta depois do Pix e Pix com data no futuro (mais de 2 min), que serviria para plantar histórico adiantado.
+Validações que devolvem 422: CPF/CNPJ com dígito verificador inválido, data que não existe no calendário, conta aberta depois do Pix e Pix com data no futuro (mais de 2 min), que serviria para plantar histórico adiantado. O CNPJ alfanumérico, que a Receita emite desde julho de 2026 (letras nas 12 primeiras posições, dígitos verificadores numéricos), é aceito e validado pela mesma conta, com o valor de cada caractere igual ao código ASCII menos 48.
 
 ## Simulação: como calibramos
 
@@ -244,6 +244,17 @@ O que sobra aprovado na fraude é o começo de cada padrão. Os primeiros pedaç
 A fricção dos clientes bons se concentra em dois lugares. O Pix alto de cliente sem histórico pede 2FA por decisão de política. A folha paga Pix a Pix pelo app pede 2FA a partir do 4º funcionário, por velocidade; como o motor não recebe o resultado do 2FA, esses Pix nunca viram "aprovados" e a relação com o funcionário não ganha o bônus de confiança no mês seguinte. A vaquinha era o falso positivo mais caro até a v6: quem recebe dos amigos e repassa tudo para a pousada somava `MULE_PASS_THROUGH` (+25) com `PROFILE_AMOUNT_SPIKE` (até +35), as duas medindo a mesma estranheza, e uma em cada seis era rejeitada. Na v7 o pico de valor não conta quando o repasse fraco dispara. Sobra um caso: com 6 amigos, o 6º Pix de entrada pode somar fan-in (+35) e pico de valor (+20) e chegar a 55, e aí o repasse passa a contar como dinheiro suspeito (+60). Foi o único cliente bom rejeitado na rodada de 300 clientes.
 
 **Limites honestos.** Os rótulos de fraude são do próprio script: isso mede a coerência da política contra ataques conhecidos, não precisão real. Para medir precisão e recall seria preciso fraude confirmada em produção e o resultado dos desafios 2FA, que o enunciado não fornece. Com esses dados, os próximos passos seriam medir a taxa de falso positivo por regra (a tabela `pix_analysis_rule_hit` já permite) e ajustar pesos por segmento (cliente novo vs. recorrente).
+
+## Fora do escopo e próximos passos
+
+O que o motor assume, e o que faria a seguir com mais dados ou mais rotas:
+
+- **O `device_id` é confiável porque vem do app do banco.** Um fraudador que copiasse o identificador do aparelho da vítima herdaria a confiança dele. Em produção, o aparelho é atestado (Play Integrity no Android, App Attest no iOS) e vinculado por uma chave guardada no hardware; isso acontece no app e no cadastro do aparelho, fora deste contrato.
+- **A data do Pix vem do sistema do banco, não do cliente.** Quem chama a API é outro sistema interno, autenticado pelo token, então o cliente final não escolhe o `transaction_date`. Por isso as janelas usam essa data; se a origem fosse menos confiável, usariam o horário de chegada, que já fica gravado em `created_at`.
+- **Sinais do aparelho que o contrato não traz.** Chamada telefônica ativa, serviço de acessibilidade ligado e tela compartilhada são os sinais clássicos do golpe guiado e do acesso remoto. Entrariam no placar de identidade se o payload os trouxesse.
+- **Consulta de CNPJ na Receita (Serpro).** Situação cadastral, data de abertura e porte do recebedor ajudariam a pegar empresa de fachada. Ficou fora porque "outras APIs" estão fora do escopo e porque uma chamada externa no caminho do Pix acrescenta latência e um ponto de falha. O desenho certo é um enriquecimento assíncrono, que marca o recebedor para os próximos Pix.
+- **Resultado do 2FA.** O motor nunca sabe se o cliente confirmou. Uma rota de confirmação faria o Pix confirmado contar como aprovado no histórico, e resolveria a fricção que se repete na folha de pagamento pelo app.
+- **Rede de contas.** As regras de aparelho compartilhado e de cadeia de laranjas olham um salto de cada vez. Um agrupamento completo (contas ligadas por aparelhos e repasses em cadeia) rodaria fora do caminho do Pix, num processo assíncrono, e o motor só leria a marca do grupo.
 
 ## Como rodar e testar
 

@@ -261,6 +261,44 @@ class TestDestination:
         assert "NEW_COUNTERPARTY" in rule_codes(make_signals(amount=p.NEW_COUNTERPARTY_MIN_AMOUNT + 1))
 
 
+class TestMuleChain:
+    def test_forwarding_money_from_many_payers_weighs(self):
+        history = History(source_inbound_payers=3, source_inbound_amount=300_000)
+        hit = find_hit(make_signals(history, amount=200_000), "MULE_PASS_THROUGH")
+
+        assert hit.points == p.MULE_PASS_THROUGH_POINTS
+        assert hit.category == "beneficiary"
+
+    def test_forwarding_money_the_engine_already_found_risky_rejects_alone(self):
+        history = History(source_inbound_payers=1, source_inbound_amount=300_000, source_inbound_suspicious_payers=1)
+        hit = find_hit(make_signals(history, amount=280_000), "MULE_PASS_THROUGH")
+
+        assert hit.points == p.MULE_DIRTY_MONEY_POINTS >= p.REJECT_BENEFICIARY_SCORE
+
+    def test_keeping_the_money_is_not_forwarding(self):
+        history = History(source_inbound_payers=3, source_inbound_amount=300_000, source_inbound_suspicious_payers=1)
+        assert "MULE_PASS_THROUGH" not in rule_codes(make_signals(history, amount=100_000))
+
+    def test_forwarding_counts_what_already_left_today(self):
+        history = History(
+            source_inbound_payers=3, source_inbound_amount=300_000, exposure_24h=100_000
+        )
+        assert "MULE_PASS_THROUGH" in rule_codes(make_signals(history, amount=60_000))
+
+    def test_small_collections_and_companies_are_not_mules(self):
+        small = History(source_inbound_payers=4, source_inbound_amount=60_000)
+        company = History(source_inbound_payers=50, source_inbound_amount=5_000_000)
+
+        assert "MULE_PASS_THROUGH" not in rule_codes(make_signals(small, amount=60_000))
+        assert "MULE_PASS_THROUGH" not in rule_codes(
+            make_signals(company, amount=4_000_000, source_document_number="11222333000181")
+        )
+
+    def test_paying_an_account_linked_to_a_chain(self):
+        hit = find_hit(make_signals(History(destination_mule_links=1)), "MULE_LINK")
+        assert hit.points == p.MULE_LINK_POINTS
+
+
 class TestTrust:
     def test_trusted_counterparty_needs_time_and_repetition(self):
         young = History(counterparty_approved_count=5, counterparty_first_approved_at=NOW - timedelta(days=3))

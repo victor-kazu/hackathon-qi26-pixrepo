@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, List, Optional, Tuple
 from uuid import uuid4
 
-from sqlalchemy import and_, func, text
+from sqlalchemy import and_, case, func, or_, text
 
 from database import Context
 from models import PixAnalysis, PixAnalysisRuleHit, PixAnalysisStatus, PixTransaction
@@ -235,6 +235,60 @@ class PixTransactionRepository:
         )
         return query.scalar()
 
+    # ─── Cadeia de laranjas ─────────────────────────────────────────
+
+    def get_source_inbound_stats(
+        self, facts: "TransactionFacts", window: timedelta, suspicious_score: int
+    ) -> Tuple[int, int, int]:
+        """O que a conta pagadora RECEBEU na janela: pagadores distintos, valor, e pagadores cujo Pix já era arriscado.
+
+        A conta pagadora aparece como destino quando um cliente nosso pagou
+        para ela. Conta só o dinheiro que pode ter chegado (aprovado e 2FA).
+        """
+        suspicious_payer = case(
+            (PixAnalysis.beneficiary_score >= suspicious_score, PixTransaction.source_document_number),
+        )
+        payers, amount, suspicious_payers = (
+            self.session.query(PixTransaction)
+            .join(PixTransaction.analysis)
+            .join(PixAnalysis.status)
+            .filter(
+                self._account_as_destination(facts.source_branch, facts.source_account_number, facts.source_document_number),
+                PixTransaction.source_document_number != facts.source_document_number,
+                PixAnalysisStatus.enumerator.in_(MONEY_OUT_STATUSES),
+                *self._window_filter(facts, window),
+            )
+            .with_entities(
+                func.count(func.distinct(PixTransaction.source_document_number)),
+                func.coalesce(func.sum(PixTransaction.amount), 0),
+                func.count(func.distinct(suspicious_payer)),
+            )
+            .one()
+        )
+        return payers, int(amount), suspicious_payers
+
+    def count_destination_mule_links(self, facts: "TransactionFacts", window: timedelta, rule_code: str) -> int:
+        """Contas pegas repassando dinheiro de golpe que pagaram este destino ou que SÃO este destino."""
+        destination_is_the_mule = and_(
+            PixTransaction.source_branch == facts.destination_branch,
+            PixTransaction.source_account_number == facts.destination_account_number,
+            PixTransaction.source_document_number == facts.destination_document_number,
+        )
+        query = (
+            self.session.query(
+                func.count(func.distinct(PixTransaction.source_branch + ":" + PixTransaction.source_account_number))
+            )
+            .select_from(PixTransaction)
+            .join(PixTransaction.analysis)
+            .join(PixAnalysis.rule_hits)
+            .filter(
+                PixAnalysisRuleHit.rule_code == rule_code,
+                or_(self._destination_filter(facts), destination_is_the_mule),
+                *self._window_filter(facts, window),
+            )
+        )
+        return query.scalar()
+
     # ─── Filtros ────────────────────────────────────────────────────
 
     def _source_query(self, facts: "TransactionFacts", window: Optional[timedelta], statuses: List[str] = None):
@@ -255,6 +309,15 @@ class PixTransactionRepository:
             PixTransaction.destination_participant == facts.destination_participant,
             PixTransaction.destination_branch == facts.destination_branch,
             PixTransaction.destination_account_number == facts.destination_account_number,
+        )
+
+    def _account_as_destination(self, branch: str, account_number: str, document_number: str):
+        # A conta pagadora não traz o ISPB no payload; agência, conta e
+        # documento do titular juntos identificam a conta do mesmo jeito.
+        return and_(
+            PixTransaction.destination_branch == branch,
+            PixTransaction.destination_account_number == account_number,
+            PixTransaction.destination_document_number == document_number,
         )
 
     def _window_filter(self, facts: "TransactionFacts", window: Optional[timedelta]) -> list:

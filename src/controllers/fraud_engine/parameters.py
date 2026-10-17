@@ -7,7 +7,7 @@ análise, e é o que permite explicar uma decisão antiga com a regra que
 valia no dia.
 """
 
-POLICY_VERSION = "2026.10.17-v4"
+POLICY_VERSION = "2026.10.17-v5"
 
 REAIS = 100
 
@@ -194,6 +194,37 @@ FLAGGED_DESTINATION_WINDOW_DAYS = 30
 FLAGGED_DESTINATION_POINTS = 35
 FLAGGED_DESTINATION_HIGH_PAYERS = 3
 FLAGGED_DESTINATION_HIGH_POINTS = 50
+
+# ─── Cadeia de laranjas ─────────────────────────────────────────────
+# Golpe raramente para na primeira conta: a vítima paga o laranja, o
+# laranja repassa em minutos para outra conta (às vezes uma "conta
+# central" que junta o dinheiro de vários laranjas), e dali o dinheiro
+# some. O motor só enxerga o trecho da cadeia que passa pelos Pix que
+# ele analisou, e olha um elo para cada lado:
+#
+# 1. O PAGADOR é um elo? Recebeu dinheiro nas últimas 24 h (aparece como
+#    destino no nosso histórico) e agora está repassando boa parte dele.
+#    - De vários pagadores distintos: é o formato do laranja, mas também
+#      o da vaquinha do churrasco, então pesa pouco (25). Não vale para
+#      PJ, que recebe de clientes e paga fornecedor por natureza.
+#    - Se algum desses Pix de entrada já tinha sido considerado arriscado
+#      pelo motor (risco de destino >= 40, ou seja, o próprio motor achou
+#      que ESTA conta parecia laranja), repassar é lavar dinheiro de
+#      golpe: 60, que rejeita sozinho. O dono do laranja passa no 2FA.
+MULE_WINDOW_HOURS = 24
+MULE_MIN_INBOUND_AMOUNT = 1_000 * REAIS
+MULE_FORWARD_RATIO = 0.5
+MULE_MIN_PAYERS = 3
+MULE_PASS_THROUGH_POINTS = 25
+MULE_SUSPICIOUS_INBOUND_SCORE = 40
+MULE_DIRTY_MONEY_POINTS = 60
+#
+# 2. O DESTINO é um elo? Nos últimos 30 dias, algum Pix já pego como
+#    repasse de laranja (MULE_PASS_THROUGH) saiu desta conta ou chegou
+#    nela. Pagar a conta central de uma cadeia é o fim do golpe: 50,
+#    que com o primeiro Pix para ela (+10) já rejeita.
+MULE_LINK_WINDOW_DAYS = 30
+MULE_LINK_POINTS = 50
 
 # Primeiro Pix para este destino. Sozinho é fraco (todo mundo paga
 # alguém pela primeira vez), por isso só acima de R$ 500 e com peso baixo.

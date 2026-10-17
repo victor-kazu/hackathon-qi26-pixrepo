@@ -20,6 +20,10 @@ from controllers.fraud_engine.signals import Signals
 IDENTITY = "identity"
 BENEFICIARY = "beneficiary"
 
+# O repository procura este código nas regras já gravadas para achar os
+# elos de uma cadeia (veja mule_link).
+MULE_PASS_THROUGH = "MULE_PASS_THROUGH"
+
 
 @dataclass(frozen=True)
 class RuleHit:
@@ -299,6 +303,42 @@ def destination_fan_in(signals: Signals) -> Optional[RuleHit]:
     )
 
 
+def mule_pass_through(signals: Signals) -> Optional[RuleHit]:
+    """O pagador recebeu dinheiro nas últimas 24 h e está repassando: é um elo da cadeia."""
+    history = signals.history
+    if signals.is_self_transfer or history.source_inbound_amount < p.MULE_MIN_INBOUND_AMOUNT:
+        return None
+
+    forwarded = history.exposure_24h + signals.facts.amount
+    if forwarded < history.source_inbound_amount * p.MULE_FORWARD_RATIO:
+        return None
+
+    received = (
+        f"conta recebeu {_reais(history.source_inbound_amount)} de {history.source_inbound_payers} pagador(es) "
+        f"em {p.MULE_WINDOW_HOURS} h e já repassou {_reais(forwarded)} com este Pix"
+    )
+    if history.source_inbound_suspicious_payers > 0:
+        return RuleHit(
+            MULE_PASS_THROUGH, BENEFICIARY, p.MULE_DIRTY_MONEY_POINTS, False,
+            received + f"; {history.source_inbound_suspicious_payers} desses Pix de entrada já tinham risco de destino alto",
+        )
+    if signals.source_is_pf and history.source_inbound_payers >= p.MULE_MIN_PAYERS:
+        return RuleHit(MULE_PASS_THROUGH, BENEFICIARY, p.MULE_PASS_THROUGH_POINTS, False, received)
+    return None
+
+
+def mule_link(signals: Signals) -> Optional[RuleHit]:
+    """O destino já apareceu numa cadeia: recebeu de um laranja ou é um laranja."""
+    links = signals.history.destination_mule_links
+    if signals.is_self_transfer or links <= 0:
+        return None
+
+    return RuleHit(
+        "MULE_LINK", BENEFICIARY, p.MULE_LINK_POINTS, False,
+        f"destino ligado a {links} conta(s) pega(s) repassando dinheiro de golpe em {p.MULE_LINK_WINDOW_DAYS} dias",
+    )
+
+
 def flagged_destination(signals: Signals) -> Optional[RuleHit]:
     payers = signals.history.destination_flagged_payers
     if payers <= 0:
@@ -439,6 +479,8 @@ RULES: List[Callable[[Signals], Optional[RuleHit]]] = [
     new_destination_account,
     destination_fan_in,
     flagged_destination,
+    mule_pass_through,
+    mule_link,
     profile_amount_spike,
     structuring,
     daily_exposure,

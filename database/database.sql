@@ -58,6 +58,10 @@ CREATE INDEX idx_pix_transaction_source_date
     ON pix_transaction (source_branch, source_account_number, transaction_date);
 CREATE INDEX idx_pix_transaction_destination_date
     ON pix_transaction (destination_participant, destination_branch, destination_account_number, transaction_date);
+-- A conta pagadora como destino (sem o ISPB, que não vem no lado do
+-- pagador): é como a regra de cadeia de laranjas acha o que ela recebeu.
+CREATE INDEX idx_pix_transaction_destination_account_date
+    ON pix_transaction (destination_branch, destination_account_number, transaction_date);
 CREATE INDEX idx_pix_transaction_device_date
     ON pix_transaction (device_id, transaction_date);
 CREATE INDEX idx_pix_transaction_ip_date

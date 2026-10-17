@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from controllers.base_controller import BaseController
 from controllers.fraud_engine import parameters as p
 from controllers.fraud_engine.policy import REJECTED, decide
+from controllers.fraud_engine.rules import MULE_PASS_THROUGH
 from controllers.fraud_engine.signals import History, PreviousLocation, TransactionFacts, build_signals
 from dtos import PixAnalysisDTO
 from errors import (
@@ -112,6 +113,9 @@ class PixTransactionController(BaseController):
         destination_parts, destination_amount = repository.get_destination_recent_stats(
             facts, timedelta(minutes=p.SPLIT_WINDOW_MINUTES)
         )
+        inbound_payers, inbound_amount, inbound_suspicious_payers = repository.get_source_inbound_stats(
+            facts, timedelta(hours=p.MULE_WINDOW_HOURS), p.MULE_SUSPICIOUS_INBOUND_SCORE
+        )
 
         return History(
             approved_count_total=repository.count_source_approved(facts),
@@ -151,6 +155,12 @@ class PixTransactionController(BaseController):
             ),
             destination_flagged_payers=repository.count_destination_flagged_payers(
                 facts, timedelta(days=p.FLAGGED_DESTINATION_WINDOW_DAYS), p.REJECT_BENEFICIARY_SCORE
+            ),
+            source_inbound_payers=inbound_payers,
+            source_inbound_amount=inbound_amount,
+            source_inbound_suspicious_payers=inbound_suspicious_payers,
+            destination_mule_links=repository.count_destination_mule_links(
+                facts, timedelta(days=p.MULE_LINK_WINDOW_DAYS), MULE_PASS_THROUGH
             ),
         )
 

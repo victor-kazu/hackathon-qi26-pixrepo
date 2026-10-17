@@ -183,6 +183,45 @@ class TestScams:
         # A partir daí o destino está marcado pela rejeição de outro pagador.
         assert "FLAGGED_DESTINATION" in rules_of(responses[5])
 
+    def test_mule_chain_is_cut_at_the_second_link(self):
+        """Vítima -> laranja -> conta central, como no caso real mostrado pelo BC.
+
+        A vítima paga um laranja (conta de 3 dias) e passa no 2FA. Quando o
+        laranja tenta repassar, o motor reconhece o dinheiro que ele mesmo
+        achou arriscado e rejeita. A partir daí a conta central está ligada
+        à cadeia, e o próximo cliente que tentar pagá-la é barrado.
+        """
+        mule_cpf = RandomGenerator.generate_cpf()
+        mule_as_destination = PayloadGenerator.create_account(
+            participant="60701190", opening_date=PayloadGenerator.daytime(days_ago=4), document_number=mule_cpf
+        )
+        mule_as_source = {key: value for key, value in mule_as_destination.items() if key != "participant"}
+        hub = PayloadGenerator.create_account(participant="18236120")
+
+        victim_pays = ObjectGenerator.analyze_pix(
+            amount=300_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=14),
+            destination_account=mule_as_destination,
+        )
+        mule_forwards = ObjectGenerator.analyze_pix(
+            amount=290_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=14, minute=20),
+            source_account=mule_as_source,
+            destination_account=hub,
+        )
+        next_payer = ObjectGenerator.analyze_pix(
+            amount=60_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=15),
+            destination_account=hub,
+        )
+
+        assert victim_pays["status"] == "two_factor_required"
+        assert victim_pays["metadata"]["beneficiary_score"] >= 40
+        assert mule_forwards["status"] == "rejected"
+        assert "MULE_PASS_THROUGH" in rules_of(mule_forwards)
+        assert next_payer["status"] == "rejected"
+        assert "MULE_LINK" in rules_of(next_payer)
+
     def test_rejection_that_is_not_about_the_destination_does_not_flag_it(self):
         """Pix barrado pelo teto noturno do pagador não suja a conta de quem ia receber."""
         destination = PayloadGenerator.create_account(participant="60701190")

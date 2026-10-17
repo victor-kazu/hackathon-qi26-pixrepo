@@ -29,11 +29,11 @@ resource ── valida o formato (JSON Schema)
 controller ── valida o conteúdo (CPF/CNPJ, datas)  ── mesmo id já analisado? devolve a mesma análise (409 se o conteúdo mudou)
    │          trava a conta pagadora (lock por conta)
    │
-   ├──► repository ── 16 consultas de histórico, todas "até a data deste Pix"
-   │                  (pagador, destino, par pagador→destino, aparelho, IP)
+   ├──► repository ── 18 consultas de histórico, todas "até a data deste Pix"
+   │                  (pagador, destino, par pagador→destino, aparelho, IP, cadeia de laranjas)
    ▼
 controllers/fraud_engine/signals.py ── monta os sinais (idade das contas, hora local, mediana, velocidade geográfica...)
-controllers/fraud_engine/rules.py   ── 25 regras: 6 duras, 17 de pontos, 2 bônus de confiança
+controllers/fraud_engine/rules.py   ── 27 regras: 6 duras, 19 de pontos, 2 bônus de confiança
 controllers/fraud_engine/policy.py  ── soma identidade e destino separadamente e decide
    │
    ▼
@@ -92,6 +92,19 @@ Valores em reais; no código ficam em centavos, em `src/controllers/fraud_engine
 | `STRUCTURING` | Pix de valor idêntico desta conta na última hora, contando o atual | ≥ 3 → +20 | Fracionar uma quantia em partes iguais para ficar abaixo dos tetos. Se os pedaços vão para o mesmo destino, quem pontua é o `SPLIT_PAYMENT`, para não contar duas vezes. |
 | `DAILY_EXPOSURE` | Soma de 24 h acima da metade do teto diário | +20 | Avisa antes do teto duro. |
 | `NEW_COUNTERPARTY` | Primeiro Pix desta conta para este destino | > R$ 500 → +10 | Todo mundo paga alguém pela primeira vez, então é fraco e só soma a outros sinais. |
+
+### Cadeia de laranjas (2FA não resolve)
+
+Golpe raramente para na primeira conta: a vítima paga um laranja, o laranja repassa em minutos para outra conta, às vezes uma conta central que junta o dinheiro de vários laranjas, e dali o dinheiro some. O motor só enxerga o trecho da cadeia que passa pelos Pix que ele analisou, e olha um elo para cada lado. As duas regras somam no placar de destino porque quem paga é o próprio dono do laranja, que passa no 2FA.
+
+| Regra | Lógica | Parâmetros | Por quê |
+|-------|--------|------------|---------|
+| `MULE_PASS_THROUGH` | O **pagador** recebeu Pix nas últimas 24 h (aparece como destino no histórico, aprovados + 2FA) e, com este Pix, já repassou pelo menos metade do que recebeu | Recebido ≥ R$ 1.000. De ≥ 3 pagadores distintos (só PF) → +25. Se algum Pix de entrada já tinha risco de destino ≥ 40 → +60 | Receber de vários e repassar é o formato do laranja, mas também o da vaquinha do churrasco, então pesa pouco. Já repassar um dinheiro que o próprio motor achou que estava indo para um laranja é lavar dinheiro de golpe: rejeita sozinho. |
+| `MULE_LINK` | Nos últimos 30 dias, algum Pix pego pelo `MULE_PASS_THROUGH` saiu do **destino** ou chegou nele | ≥ 1 conta ligada → +50 | O destino é um laranja ou a conta central da cadeia. Com o primeiro Pix para ele (+10), rejeita. |
+
+O cenário de ponta a ponta `test_mule_chain_is_cut_at_the_second_link` reproduz a cadeia: a vítima paga um laranja aberto há 3 dias e cai no 2FA (risco de destino 40). Quando o laranja tenta repassar para a conta central, o Pix é rejeitado pelo `MULE_PASS_THROUGH`. A partir daí, o próximo cliente que tentar pagar a conta central é rejeitado pelo `MULE_LINK`.
+
+O custo conhecido: uma conta recém-aberta que recebe de alguém pela primeira vez e repassa quase tudo em seguida tem o mesmo formato de um laranja, e é barrada. É o mesmo comportamento que o bloqueio cautelar do Pix existe para pegar.
 
 ### Bônus de confiança
 

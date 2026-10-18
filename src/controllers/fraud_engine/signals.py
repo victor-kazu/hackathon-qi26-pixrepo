@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from math import asin, cos, radians, sin, sqrt
 from statistics import median
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from controllers.fraud_engine import parameters
 
@@ -87,6 +87,9 @@ class History:
     destination_mule_links: int = 0
     # Quanto saiu desta conta desde o começo da noite (20h), antes deste Pix.
     night_outflow: int = 0
+    # Maior soma de Pix aprovados num mesmo dia, nos últimos 90 dias,
+    # sem contar as últimas 24 h.
+    max_daily_outflow: int = 0
 
 
 @dataclass(frozen=True)
@@ -114,6 +117,9 @@ class Signals:
     travel_distance_km: Optional[float]
     travel_speed_kmh: Optional[float]
     travel_device_changed: bool
+    # Teto duro de 24 h, e o teto do cliente pelo histórico (None sem perfil).
+    daily_limit: int
+    customer_daily_limit: Optional[int]
 
     def to_dict(self) -> dict:
         """O retrato dos sinais que vai para a metadata da análise."""
@@ -154,6 +160,9 @@ class Signals:
             "source_inbound_suspicious_payers_24h": self.history.source_inbound_suspicious_payers,
             "destination_mule_links_30d": self.history.destination_mule_links,
             "night_outflow_before_this_pix": self.history.night_outflow,
+            "max_daily_outflow_90d": self.history.max_daily_outflow,
+            "daily_limit": self.daily_limit,
+            "customer_daily_limit": self.customer_daily_limit,
         }
 
 
@@ -190,6 +199,8 @@ def build_signals(facts: TransactionFacts, history: History) -> Signals:
         and history.approved_count_total >= parameters.MATURE_MIN_APPROVED
     )
 
+    daily_limit, customer_daily_limit = _daily_limits(history, is_pf(facts.source_document_number))
+
     travel_distance_km = None
     travel_speed_kmh = None
     travel_device_changed = False
@@ -222,7 +233,24 @@ def build_signals(facts: TransactionFacts, history: History) -> Signals:
         travel_distance_km=travel_distance_km,
         travel_speed_kmh=travel_speed_kmh,
         travel_device_changed=travel_device_changed,
+        daily_limit=daily_limit,
+        customer_daily_limit=customer_daily_limit,
     )
+
+
+def _daily_limits(history: History, source_is_pf: bool) -> Tuple[int, Optional[int]]:
+    """O teto duro de 24 h e o teto do cliente, que sai do histórico dele."""
+    multiplier = 1 if source_is_pf else parameters.DAILY_PJ_MULTIPLIER
+    default_limit = parameters.DAILY_PF_HARD_LIMIT * multiplier
+    has_profile = len(history.approved_amounts_profile) >= parameters.PROFILE_MIN_TRANSACTIONS
+    if not has_profile or history.max_daily_outflow <= 0:
+        return default_limit, None
+
+    proportional = history.max_daily_outflow * parameters.DAILY_LIMIT_HISTORY_MULTIPLIER
+    floor = parameters.DAILY_PF_MIN_LIMIT * multiplier
+    ceiling = parameters.DAILY_PF_MAX_LIMIT * multiplier
+    customer_limit = min(max(proportional, floor), ceiling)
+    return max(default_limit, customer_limit), customer_limit
 
 
 def local_datetime(moment: datetime) -> datetime:

@@ -349,6 +349,66 @@ class TestDailyLimit:
         assert "DAILY_EXPOSURE" not in codes
 
 
+def with_profile(max_daily_outflow: int, **overrides) -> History:
+    """Cliente com perfil formado e um maior dia de saídas conhecido."""
+    return History(
+        approved_count_total=20,
+        approved_amounts_profile=[20_000] * p.PROFILE_MIN_TRANSACTIONS,
+        max_daily_outflow=max_daily_outflow,
+        **overrides,
+    )
+
+
+class TestCustomerDailyLimit:
+    def test_without_profile_only_the_default_ceiling_applies(self):
+        signals = make_signals(History(max_daily_outflow=100_000), amount=p.DAILY_PF_MIN_LIMIT + 1)
+
+        assert signals.customer_daily_limit is None
+        assert signals.daily_limit == p.DAILY_PF_HARD_LIMIT
+        assert "DAILY_PROFILE_LIMIT" not in rule_codes(signals)
+
+    def test_customer_ceiling_is_three_times_the_biggest_day_with_a_floor(self):
+        assert make_signals(with_profile(300_000)).customer_daily_limit == 900_000
+        assert make_signals(with_profile(50_000)).customer_daily_limit == p.DAILY_PF_MIN_LIMIT
+        assert make_signals(with_profile(5_000_000)).customer_daily_limit == p.DAILY_PF_MAX_LIMIT
+
+    def test_above_the_customer_ceiling_asks_two_factor_instead_of_rejecting(self):
+        """Quem nunca passou de R$ 1.000 num dia manda R$ 6.000: prova que é você."""
+        history = with_profile(100_000, exposure_24h=100_000)
+
+        assert "DAILY_PROFILE_LIMIT" not in rule_codes(make_signals(history, amount=p.DAILY_PF_MIN_LIMIT - 100_000))
+        hit = find_hit(make_signals(history, amount=500_000), "DAILY_PROFILE_LIMIT")
+        assert hit.category == "identity" and not hit.hard
+        assert hit.points == p.DAILY_PROFILE_LIMIT_POINTS
+        assert "DAILY_HARD_LIMIT" not in rule_codes(make_signals(history, amount=500_000))
+
+    def test_big_spender_gets_a_hard_ceiling_above_the_default(self):
+        """Quem já pagou R$ 15 mil num dia tem teto de R$ 45 mil, e não de R$ 20 mil."""
+        history = with_profile(1_500_000)
+
+        assert make_signals(history).daily_limit == 4_500_000
+        assert rule_codes(make_signals(history, amount=3_000_000)).count("DAILY_HARD_LIMIT") == 0
+        assert "DAILY_HARD_LIMIT" in rule_codes(make_signals(history, amount=4_500_001))
+
+    def test_companies_only_get_the_higher_hard_ceiling(self):
+        """Folha e fornecedor têm picos que 90 dias não mostram: empresa não leva o 2FA do teto do cliente."""
+        company = "11222333000181"
+        small = make_signals(with_profile(1_000_000), amount=6_000_000, source_document_number=company)
+        big = make_signals(with_profile(10_000_000), amount=25_000_000, source_document_number=company)
+
+        assert small.customer_daily_limit == p.DAILY_PF_MIN_LIMIT * p.DAILY_PJ_MULTIPLIER
+        assert small.daily_limit == p.DAILY_PJ_HARD_LIMIT
+        assert "DAILY_PROFILE_LIMIT" not in rule_codes(small)
+        assert big.daily_limit == 30_000_000
+        assert "DAILY_HARD_LIMIT" not in rule_codes(big)
+
+    def test_moving_money_to_own_account_skips_the_customer_ceiling(self):
+        signals = make_signals(with_profile(100_000), amount=800_000, destination_document_number="12345678909")
+
+        assert signals.is_self_transfer
+        assert "DAILY_PROFILE_LIMIT" not in rule_codes(signals)
+
+
 class TestMuleChain:
     def test_forwarding_money_from_many_payers_weighs(self):
         history = History(source_inbound_payers=3, source_inbound_amount=300_000)

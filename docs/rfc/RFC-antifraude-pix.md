@@ -4,7 +4,7 @@
 |---|---|
 | **Time** | Grupo 3 · Victor Kazunori · Matheus Reis |
 | **Data** | 17/10/2026 |
-| **Versão** | 1 (política `2026.10.18-v8`) |
+| **Versão** | 1 (política `2026.10.18-v9`) |
 
 ## Contextualização
 
@@ -24,7 +24,7 @@ Fora do escopo desta entrega: onboarding e cadastro de contas, front-end, outras
 
 ### Explicando a solução de forma macro
 
-O resource valida o formato (JSON Schema). O controller valida o conteúdo (CPF/CNPJ, datas), trata a idempotência, trava a conta pagadora e busca o histórico pelo repository: 19 consultas, todas recortadas "até a data deste Pix". Com esse retrato, o motor (Python puro, em `controllers/fraud_engine/`, sem banco nem HTTP) monta os sinais e roda 29 regras, de quatro tipos:
+O resource valida o formato (JSON Schema). O controller valida o conteúdo (CPF/CNPJ, datas), trata a idempotência, trava a conta pagadora e busca o histórico pelo repository: 20 consultas, todas recortadas "até a data deste Pix". Com esse retrato, o motor (Python puro, em `controllers/fraud_engine/`, sem banco nem HTTP) monta os sinais e roda 30 regras, de quatro tipos:
 
 - **Duras (7):** rejeitam sozinhas.
 - **De identidade:** somam no placar de identidade, que pede 2FA.
@@ -133,7 +133,7 @@ sequenceDiagram
     Note over DB: conta pagadora travada
     CT->>DB: SELECT analise por pix_id (de novo, ja com a trava)
     DB-->>CT: nenhuma
-    CT->>DB: 19 consultas de historico ate transaction_date
+    CT->>DB: 20 consultas de historico ate transaction_date
     DB-->>CT: historico
     CT->>M: build_signals + decide
     M-->>CT: status, placares, regras acionadas
@@ -149,7 +149,7 @@ sequenceDiagram
 4. Trava a conta pagadora com `pg_advisory_xact_lock`, que dura até o fim da transação. Outra análise da mesma conta espera aqui.
 5. Procura o `pix_id` de novo, já com a trava: um reenvio que esperou a trava encontra aqui a análise do primeiro.
 6. Busca o histórico (pagador, destino, par pagador→destino, aparelho, IP, cadeia de laranjas, soma da noite), sempre até o `transaction_date`. Um Pix nunca é julgado com informação que só existiu depois dele.
-7. O motor monta os sinais, roda as 29 regras e lê a tabela de decisão.
+7. O motor monta os sinais, roda as 30 regras e lê a tabela de decisão.
 8. O controller grava o Pix, a análise e uma linha por regra acionada, confirma (o que solta a trava) e responde `201`.
 
 **Analisar um Pix — falha: o mesmo `id` de novo**
@@ -202,5 +202,6 @@ sequenceDiagram
 >   - **Tabela de decisão fixa:** regra dura, depois destino ≥ 60, depois total ≥ 90, que rejeitam; depois total ≥ 40, que pede 2FA.
 >   - **Régua por maturidade:** as regras duras olham quem paga. Conta nova é barrada no 5º Pix em 5 minutos e com 3 pagadores no aparelho; conta com 180 dias e histórico aprovado pede 2FA e só é barrada em volumes que nenhum uso humano explica.
 >   - **Conta própria comprovada:** o mesmo CPF só vale como transferência entre contas próprias se a conta de destino é antiga ou já conhecida.
+>   - **Teto diário do cliente:** o teto de 24 h acompanha o histórico. Passar de 3x o maior dia dos últimos 90 dias pede 2FA (pessoa física), porque é o retrato do celular destravado; o teto que rejeita é o maior entre o padrão de R$ 20 mil e o do cliente, para quem movimenta muito não ser barrado num valor fixo.
 >   - **Funil com piso de valor:** muitos pagadores para a mesma pessoa física só pesam a partir de R$ 200 por Pix. O golpe em massa tira centenas ou milhares de cada vítima; o vendedor ambulante recebe de dezenas de clientes em ticket baixo e não pode cair no 2FA a cada venda.
->   - **Calibragem medida:** cada número saiu da simulação. Com a semente 42: 90% dos clientes bons aprovados direto e nenhum rejeitado, com latência p99 de 37 ms.
+>   - **Calibragem medida:** cada número saiu da simulação. Com a semente 42: 89% dos clientes bons aprovados direto e nenhum rejeitado, com latência p99 de 39 ms.

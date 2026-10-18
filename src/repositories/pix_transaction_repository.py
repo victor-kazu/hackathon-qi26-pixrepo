@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 MONEY_OUT_STATUSES = [PixAnalysisStatus.APPROVED, PixAnalysisStatus.TWO_FACTOR_REQUIRED]
 
 PROFILE_MAX_TRANSACTIONS = 500
+BRASILIA_TZ = "America/Sao_Paulo"
 
 
 class PixTransactionRepository:
@@ -150,6 +151,18 @@ class PixTransactionRepository:
 
         # SUM de BIGINT volta NUMERIC (Decimal) do Postgres; o motor trabalha em centavos inteiros.
         return int(query.with_entities(func.coalesce(func.sum(PixTransaction.amount), 0)).scalar())
+
+    def get_source_max_daily_approved(self, facts: "TransactionFacts", window: timedelta, skip_recent: timedelta) -> int:
+        """O maior total aprovado num mesmo dia (horário de Brasília) na janela, ignorando o período mais recente."""
+        day = func.date(func.timezone(BRASILIA_TZ, PixTransaction.transaction_date)).label("day")
+        daily_totals = (
+            self._source_query(facts, window, [PixAnalysisStatus.APPROVED])
+            .filter(PixTransaction.transaction_date <= facts.transaction_date - skip_recent)
+            .with_entities(day, func.sum(PixTransaction.amount).label("total"))
+            .group_by(day)
+            .subquery()
+        )
+        return int(self.session.query(func.coalesce(func.max(daily_totals.c.total), 0)).scalar())
 
     def get_destination_recent_stats(self, facts: "TransactionFacts", window: timedelta) -> Tuple[int, int]:
         """Quantos Pix e quanto dinheiro saíram desta conta para este destino na janela."""

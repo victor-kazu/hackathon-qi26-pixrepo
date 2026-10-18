@@ -127,7 +127,24 @@ def daily_hard_limit(signals: Signals) -> Optional[RuleHit]:
     if exposure > limit:
         return RuleHit(
             "DAILY_HARD_LIMIT", BENEFICIARY, 0, True,
-            f"{_reais(exposure)} em 24 h com este Pix, acima do teto de {_reais(limit)}",
+            f"{_reais(exposure)} em 24 h com este Pix, acima do {_daily_limit_label(signals)}",
+        )
+    return None
+
+
+def daily_profile_limit(signals: Signals) -> Optional[RuleHit]:
+    """Passou do teto que o histórico do cliente explica: pede 2FA, porque quem precisa provar algo é o pagador."""
+    limit = signals.customer_daily_limit
+    if limit is None or signals.is_self_transfer or not signals.source_is_pf:
+        return None
+
+    exposure = signals.history.exposure_24h + signals.facts.amount
+    if limit < exposure <= signals.daily_limit:
+        return RuleHit(
+            "DAILY_PROFILE_LIMIT", IDENTITY, p.DAILY_PROFILE_LIMIT_POINTS, False,
+            f"{_reais(exposure)} em 24 h com este Pix, acima do teto do cliente de {_reais(limit)} "
+            f"({p.DAILY_LIMIT_HISTORY_MULTIPLIER}x o maior dia em {p.PROFILE_WINDOW_DAYS} dias, "
+            f"{_reais(signals.history.max_daily_outflow)})",
         )
     return None
 
@@ -457,7 +474,7 @@ def daily_exposure(signals: Signals) -> Optional[RuleHit]:
     if limit * p.DAILY_EXPOSURE_SOFT_RATIO < exposure <= limit:
         return RuleHit(
             "DAILY_EXPOSURE", BENEFICIARY, p.DAILY_EXPOSURE_POINTS, False,
-            f"{_reais(exposure)} em 24 h com este Pix, mais da metade do teto de {_reais(limit)}",
+            f"{_reais(exposure)} em 24 h com este Pix, mais da metade do {_daily_limit_label(signals)}",
         )
     return None
 
@@ -516,10 +533,14 @@ def _night_total(signals: Signals) -> Optional[int]:
 
 
 def _daily_limit(signals: Signals) -> int:
-    if signals.source_is_pf:
-        return p.DAILY_PF_HARD_LIMIT
+    return signals.daily_limit
 
-    return p.DAILY_PJ_HARD_LIMIT
+
+def _daily_limit_label(signals: Signals) -> str:
+    if signals.daily_limit == signals.customer_daily_limit:
+        return f"teto do cliente de {_reais(signals.daily_limit)}"
+
+    return f"teto de {_reais(signals.daily_limit)}"
 
 
 def _split_limit(signals: Signals) -> Tuple[int, str]:
@@ -557,6 +578,7 @@ RULES: List[Callable[[Signals], Optional[RuleHit]]] = [
     impossible_travel,
     new_source_account,
     high_value_without_profile,
+    daily_profile_limit,
     split_payment,
     shared_device,
     shared_ip,

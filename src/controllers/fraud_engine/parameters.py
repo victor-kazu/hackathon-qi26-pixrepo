@@ -7,7 +7,7 @@ análise, e é o que permite explicar uma decisão antiga com a regra que
 valia no dia.
 """
 
-POLICY_VERSION = "2026.10.18-v8"
+POLICY_VERSION = "2026.10.18-v9"
 
 REAIS = 100
 
@@ -59,8 +59,28 @@ NIGHT_TOTAL_POINTS = 40
 # Exposição de 24 h (aprovados + 2FA + o Pix atual). Contenção de dano
 # se tudo o mais falhar: celular roubado e destravado esvazia conta em
 # minutos.
+# O teto acompanha o cliente. O teto do cliente é 3x o maior dia de
+# saídas aprovadas nos últimos 90 dias (sem contar as últimas 24 h, para
+# o próprio ataque não subir o teto), entre um piso e um máximo.
+#   - Passar do teto do cliente pede 2FA (+40 de identidade): quem
+#     movimenta R$ 2 mil por mês e de repente manda R$ 8 mil precisa
+#     provar que é ele. É o celular roubado e destravado que o 2FA segura.
+#   - O teto duro, que rejeita, é o maior entre o padrão e o do cliente:
+#     quem paga R$ 30 mil de fornecedor toda semana não é barrado num
+#     teto fixo de R$ 20 mil.
+#   - Empresa não leva o 2FA do teto do cliente, só o teto duro maior:
+#     folha, 13º e fornecedor trimestral são picos que 90 dias não mostram,
+#     e a folha já pede 2FA por velocidade (os dois somados rejeitariam).
+# Sem perfil (menos de PROFILE_MIN_TRANSACTIONS aprovados em 90 dias),
+# só vale o teto padrão: cold start não é suspeita.
+DAILY_LIMIT_HISTORY_MULTIPLIER = 3
+DAILY_PF_MIN_LIMIT = 5_000 * REAIS
+DAILY_PF_MAX_LIMIT = 100_000 * REAIS
+DAILY_PROFILE_LIMIT_POINTS = 40
 DAILY_PF_HARD_LIMIT = 20_000 * REAIS
-DAILY_PJ_HARD_LIMIT = 200_000 * REAIS
+# Empresa movimenta mais por natureza: piso, padrão e máximo 10x maiores.
+DAILY_PJ_MULTIPLIER = 10
+DAILY_PJ_HARD_LIMIT = DAILY_PF_HARD_LIMIT * DAILY_PJ_MULTIPLIER
 # Antes do teto duro, metade dele já pesa no score.
 DAILY_EXPOSURE_SOFT_RATIO = 0.5
 DAILY_EXPOSURE_POINTS = 20

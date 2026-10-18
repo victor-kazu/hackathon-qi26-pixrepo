@@ -171,6 +171,9 @@ class PixTransactionController(BaseController):
                 facts, timedelta(days=p.MULE_LINK_WINDOW_DAYS), MULE_PASS_THROUGH
             ),
             night_outflow=self._night_outflow(facts),
+            max_daily_outflow=repository.get_source_max_daily_approved(
+                facts, timedelta(days=p.PROFILE_WINDOW_DAYS), timedelta(hours=24)
+            ),
         )
 
     def _night_outflow(self, facts: TransactionFacts) -> int:

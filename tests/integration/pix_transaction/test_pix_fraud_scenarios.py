@@ -151,6 +151,62 @@ class TestGoodCustomers:
         assert supplier_payment["status"] == "approved"
 
 
+class TestCustomerDailyLimit:
+    def test_customer_ceiling_comes_from_the_biggest_approved_day(self):
+        """O maior dia soma os Pix aprovados do mesmo dia e ignora as últimas 24 h."""
+        source_account, device_id = PayloadGenerator.create_account(), new_device()
+        payee = PayloadGenerator.create_account(participant="60701190")
+        ObjectGenerator.build_history(source_account, payee, device_id, [40, 35, 30, 25], 30_000)
+        for hour in (9, 15):
+            ObjectGenerator.analyze_pix(
+                amount=80_000,
+                transaction_date=PayloadGenerator.daytime(days_ago=20, hour=hour),
+                source_account=source_account,
+                destination_account=payee,
+                device_id=device_id,
+            )
+        ObjectGenerator.analyze_pix(
+            amount=90_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=10),
+            source_account=source_account,
+            destination_account=payee,
+            device_id=device_id,
+        )
+
+        response = ObjectGenerator.analyze_pix(
+            amount=10_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=14),
+            source_account=source_account,
+            destination_account=payee,
+            device_id=device_id,
+        )
+
+        signals = response["metadata"]["signals"]
+        assert signals["max_daily_outflow_90d"] == 160_000
+        assert signals["customer_daily_limit"] == 500_000
+
+    def test_stolen_unlocked_phone_above_the_customer_ceiling_asks_two_factor(self):
+        """Celular destravado no aparelho de sempre: o teto do cliente pede 2FA, que o ladrão não tem."""
+        source_account, device_id = PayloadGenerator.create_account(), new_device()
+        payee = PayloadGenerator.create_account(participant="60701190")
+        ObjectGenerator.build_history(source_account, payee, device_id, [40, 35, 30, 25, 20], 30_000)
+
+        responses = [
+            ObjectGenerator.analyze_pix(
+                amount=150_000,
+                transaction_date=PayloadGenerator.daytime(days_ago=1, hour=13 + index),
+                source_account=source_account,
+                destination_account=payee,
+                device_id=device_id,
+            )
+            for index in range(4)
+        ]
+
+        assert "DAILY_PROFILE_LIMIT" not in rules_of(responses[2])
+        assert responses[3]["status"] == "two_factor_required"
+        assert "DAILY_PROFILE_LIMIT" in rules_of(responses[3])
+
+
 class TestAccountTakeover:
     def test_new_device_asks_for_two_factor_and_then_hits_the_daily_limit(self):
         source_account = PayloadGenerator.create_account()

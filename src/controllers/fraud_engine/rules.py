@@ -121,30 +121,26 @@ def night_total_hard_limit(signals: Signals) -> Optional[RuleHit]:
     )
 
 
-def daily_hard_limit(signals: Signals) -> Optional[RuleHit]:
-    limit = _daily_limit(signals)
+def daily_limit(signals: Signals) -> Optional[RuleHit]:
+    """Passou do teto diário: pede 2FA, porque quem precisa provar algo é o pagador."""
     exposure = signals.history.exposure_24h + signals.facts.amount
+    uses_customer_limit = (
+        signals.customer_daily_limit is not None and signals.source_is_pf and not signals.is_self_transfer
+    )
+    if uses_customer_limit:
+        limit = signals.customer_daily_limit
+        label = (
+            f"teto do cliente de {_reais(limit)} ({p.DAILY_LIMIT_HISTORY_MULTIPLIER}x o maior dia em "
+            f"{p.PROFILE_WINDOW_DAYS} dias, {_reais(signals.history.max_daily_outflow)})"
+        )
+    else:
+        limit = signals.daily_limit
+        label = f"teto de {_reais(limit)}"
+
     if exposure > limit:
         return RuleHit(
-            "DAILY_HARD_LIMIT", BENEFICIARY, 0, True,
-            f"{_reais(exposure)} em 24 h com este Pix, acima do {_daily_limit_label(signals)}",
-        )
-    return None
-
-
-def daily_profile_limit(signals: Signals) -> Optional[RuleHit]:
-    """Passou do teto que o histórico do cliente explica: pede 2FA, porque quem precisa provar algo é o pagador."""
-    limit = signals.customer_daily_limit
-    if limit is None or signals.is_self_transfer or not signals.source_is_pf:
-        return None
-
-    exposure = signals.history.exposure_24h + signals.facts.amount
-    if limit < exposure <= signals.daily_limit:
-        return RuleHit(
-            "DAILY_PROFILE_LIMIT", IDENTITY, p.DAILY_PROFILE_LIMIT_POINTS, False,
-            f"{_reais(exposure)} em 24 h com este Pix, acima do teto do cliente de {_reais(limit)} "
-            f"({p.DAILY_LIMIT_HISTORY_MULTIPLIER}x o maior dia em {p.PROFILE_WINDOW_DAYS} dias, "
-            f"{_reais(signals.history.max_daily_outflow)})",
+            "DAILY_LIMIT", IDENTITY, p.DAILY_LIMIT_POINTS, False,
+            f"{_reais(exposure)} em 24 h com este Pix, acima do {label}",
         )
     return None
 
@@ -469,12 +465,12 @@ def structuring(signals: Signals) -> Optional[RuleHit]:
 
 
 def daily_exposure(signals: Signals) -> Optional[RuleHit]:
-    limit = _daily_limit(signals)
+    limit = signals.daily_limit
     exposure = signals.history.exposure_24h + signals.facts.amount
     if limit * p.DAILY_EXPOSURE_SOFT_RATIO < exposure <= limit:
         return RuleHit(
             "DAILY_EXPOSURE", BENEFICIARY, p.DAILY_EXPOSURE_POINTS, False,
-            f"{_reais(exposure)} em 24 h com este Pix, mais da metade do {_daily_limit_label(signals)}",
+            f"{_reais(exposure)} em 24 h com este Pix, mais da metade do teto de {_reais(limit)}",
         )
     return None
 
@@ -532,17 +528,6 @@ def _night_total(signals: Signals) -> Optional[int]:
     return signals.history.night_outflow + signals.facts.amount
 
 
-def _daily_limit(signals: Signals) -> int:
-    return signals.daily_limit
-
-
-def _daily_limit_label(signals: Signals) -> str:
-    if signals.daily_limit == signals.customer_daily_limit:
-        return f"teto do cliente de {_reais(signals.daily_limit)}"
-
-    return f"teto de {_reais(signals.daily_limit)}"
-
-
 def _split_limit(signals: Signals) -> Tuple[int, str]:
     """O limite que os pedaços somados estão tentando driblar."""
     if signals.is_night and signals.source_is_pf:
@@ -567,7 +552,6 @@ RULES: List[Callable[[Signals], Optional[RuleHit]]] = [
     device_farm,
     night_hard_limit,
     night_total_hard_limit,
-    daily_hard_limit,
     new_device_daily_limit,
     impossible_travel_other_device,
     velocity_burst,
@@ -578,7 +562,7 @@ RULES: List[Callable[[Signals], Optional[RuleHit]]] = [
     impossible_travel,
     new_source_account,
     high_value_without_profile,
-    daily_profile_limit,
+    daily_limit,
     split_payment,
     shared_device,
     shared_ip,

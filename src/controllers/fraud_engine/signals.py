@@ -117,7 +117,7 @@ class Signals:
     travel_distance_km: Optional[float]
     travel_speed_kmh: Optional[float]
     travel_device_changed: bool
-    # Teto duro de 24 h, e o teto do cliente pelo histórico (None sem perfil).
+    # Maior entre o teto padrão e o do cliente, e o teto do cliente pelo histórico (None sem perfil).
     daily_limit: int
     customer_daily_limit: Optional[int]
 
@@ -239,9 +239,9 @@ def build_signals(facts: TransactionFacts, history: History) -> Signals:
 
 
 def _daily_limits(history: History, source_is_pf: bool) -> Tuple[int, Optional[int]]:
-    """O teto duro de 24 h e o teto do cliente, que sai do histórico dele."""
+    """O maior entre o teto padrão e o do cliente, e o teto do cliente, que sai do histórico dele."""
     multiplier = 1 if source_is_pf else parameters.DAILY_PJ_MULTIPLIER
-    default_limit = parameters.DAILY_PF_HARD_LIMIT * multiplier
+    default_limit = parameters.DAILY_PF_DEFAULT_LIMIT * multiplier
     has_profile = len(history.approved_amounts_profile) >= parameters.PROFILE_MIN_TRANSACTIONS
     if not has_profile or history.max_daily_outflow <= 0:
         return default_limit, None

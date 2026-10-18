@@ -202,9 +202,9 @@ class TestCustomerDailyLimit:
             for index in range(4)
         ]
 
-        assert "DAILY_PROFILE_LIMIT" not in rules_of(responses[2])
+        assert "DAILY_LIMIT" not in rules_of(responses[2])
         assert responses[3]["status"] == "two_factor_required"
-        assert "DAILY_PROFILE_LIMIT" in rules_of(responses[3])
+        assert "DAILY_LIMIT" in rules_of(responses[3])
 
 
 class TestAccountTakeover:
@@ -402,7 +402,7 @@ class TestScams:
         assert "FLAGGED_DESTINATION" not in rules_of(second_victim)
 
     def test_daily_ceiling_counts_what_already_left(self):
-        """R$ 12 mil passa com 2FA; outros R$ 12 mil no mesmo dia estouram o teto de R$ 20 mil e são barrados."""
+        """R$ 12 mil passa com 2FA; outros R$ 12 mil no mesmo dia estouram o teto de R$ 20 mil e também pedem 2FA."""
         source_account = PayloadGenerator.create_account()
         first = ObjectGenerator.analyze_pix(
             amount=1_200_000, transaction_date=PayloadGenerator.daytime(days_ago=1, hour=10), source_account=source_account
@@ -412,8 +412,8 @@ class TestScams:
         )
 
         assert first["status"] == "two_factor_required"
-        assert second["status"] == "rejected"
-        assert "DAILY_HARD_LIMIT" in rules_of(second)
+        assert second["status"] == "two_factor_required"
+        assert "DAILY_LIMIT" in rules_of(second)
         assert second["metadata"]["signals"]["exposure_last_24h"] == 1_200_000
 
     def test_rejection_that_is_not_about_the_destination_does_not_flag_it(self):

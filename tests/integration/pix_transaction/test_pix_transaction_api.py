@@ -140,6 +140,39 @@ class TestIdempotency:
         assert response["metadata"]["signals"]["attempts_last_1h"] == 1
 
 
+class TestConcurrency:
+    def test_parallel_pix_from_one_account_get_the_same_decisions_as_in_a_queue(self):
+        """Conta nova dispara 5 Pix ao mesmo tempo, como um robô faria.
+
+        Sem o lock por conta, os 5 leriam o histórico vazio e seriam todos
+        aprovados. Com ele, cada um enxerga os anteriores: o histórico visto
+        vai de 0 a 4 tentativas, e as decisões são as mesmas da fila.
+        """
+        source_account, device_id = PayloadGenerator.create_account(), f"dvc-{uuid4().hex[:12]}"
+        moment = PayloadGenerator.daytime(days_ago=1, hour=14)
+        payloads = [
+            PayloadGenerator.create_pix_payload(
+                amount=10_000 + index * 100, transaction_date=moment, source_account=source_account, device_id=device_id
+            )
+            for index in range(5)
+        ]
+
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            results = list(pool.map(RequestGenerator.POST_pix_transaction, payloads))
+
+        assert [status for status, _ in results] == [201] * 5
+        by_attempt = sorted(
+            (response["metadata"]["signals"]["attempts_last_5min"], response["status"]) for _, response in results
+        )
+        assert by_attempt == [
+            (0, "approved"),
+            (1, "approved"),
+            (2, "two_factor_required"),
+            (3, "two_factor_required"),
+            (4, "rejected"),
+        ]
+
+
 class TestValidation:
     def test_refuses_empty_body(self):
         status, response = RequestGenerator.POST_pix_transaction({})

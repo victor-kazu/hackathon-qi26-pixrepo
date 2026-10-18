@@ -156,37 +156,6 @@ class TestGoodCustomers:
         assert next_guest["status"] == "approved"
         assert "MULE_LINK" not in rules_of(next_guest)
 
-    def test_weak_forward_that_ended_rejected_still_links_the_hub(self):
-        """Laranja de conta nova que recebe de 3 vítimas sem sinal nenhum: o repasse fraco soma e é rejeitado, e a central fica ligada."""
-        mule_as_destination = PayloadGenerator.create_account(
-            participant="60701190", opening_date=PayloadGenerator.daytime(days_ago=40)
-        )
-        mule_as_source = {key: value for key, value in mule_as_destination.items() if key != "participant"}
-        hub = PayloadGenerator.create_account(participant="18236120", opening_date=PayloadGenerator.daytime(days_ago=3))
-        for minute in (0, 10, 20):
-            ObjectGenerator.analyze_pix(
-                amount=40_000,
-                transaction_date=PayloadGenerator.daytime(days_ago=1, hour=10, minute=minute),
-                destination_account=mule_as_destination,
-            )
-        forward = ObjectGenerator.analyze_pix(
-            amount=115_000,
-            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=10, minute=40),
-            source_account=mule_as_source,
-            destination_account=hub,
-        )
-        next_payer = ObjectGenerator.analyze_pix(
-            amount=60_000,
-            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=11),
-            destination_account=hub,
-        )
-
-        assert forward["status"] == "rejected"
-        assert any(
-            hit["rule"] == "MULE_PASS_THROUGH" and hit["points"] == 25 for hit in forward["metadata"]["triggered_rules"]
-        )
-        assert "MULE_LINK" in rules_of(next_payer)
-
     def test_street_vendor_receives_from_many_customers_and_pays_the_supplier(self):
         """Pipoqueiro: 15 clientes pagam R$ 70 na mesma tarde, e à noite ele paga o fornecedor.
 
@@ -274,6 +243,21 @@ class TestCustomerDailyLimit:
         assert "DAILY_LIMIT" not in rules_of(responses[2])
         assert responses[3]["status"] == "two_factor_required"
         assert "DAILY_LIMIT" in rules_of(responses[3])
+
+    def test_daily_ceiling_counts_what_already_left(self):
+        """R$ 12 mil passa com 2FA; outros R$ 12 mil no mesmo dia estouram o teto de R$ 20 mil e também pedem 2FA."""
+        source_account = PayloadGenerator.create_account()
+        first = ObjectGenerator.analyze_pix(
+            amount=1_200_000, transaction_date=PayloadGenerator.daytime(days_ago=1, hour=10), source_account=source_account
+        )
+        second = ObjectGenerator.analyze_pix(
+            amount=1_200_000, transaction_date=PayloadGenerator.daytime(days_ago=1, hour=16), source_account=source_account
+        )
+
+        assert first["status"] == "two_factor_required"
+        assert second["status"] == "two_factor_required"
+        assert "DAILY_LIMIT" in rules_of(second)
+        assert second["metadata"]["signals"]["exposure_last_24h"] == 1_200_000
 
 
 class TestAccountTakeover:
@@ -441,6 +425,71 @@ class TestScams:
         assert next_payer["status"] == "rejected"
         assert "MULE_LINK" in rules_of(next_payer)
 
+    def test_weak_forward_that_ended_rejected_still_links_the_hub(self):
+        """Laranja de conta nova que recebe de 3 vítimas sem sinal nenhum: o repasse fraco soma e é rejeitado, e a central fica ligada."""
+        mule_as_destination = PayloadGenerator.create_account(
+            participant="60701190", opening_date=PayloadGenerator.daytime(days_ago=40)
+        )
+        mule_as_source = {key: value for key, value in mule_as_destination.items() if key != "participant"}
+        hub = PayloadGenerator.create_account(participant="18236120", opening_date=PayloadGenerator.daytime(days_ago=3))
+        for minute in (0, 10, 20):
+            ObjectGenerator.analyze_pix(
+                amount=40_000,
+                transaction_date=PayloadGenerator.daytime(days_ago=1, hour=10, minute=minute),
+                destination_account=mule_as_destination,
+            )
+        forward = ObjectGenerator.analyze_pix(
+            amount=115_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=10, minute=40),
+            source_account=mule_as_source,
+            destination_account=hub,
+        )
+        next_payer = ObjectGenerator.analyze_pix(
+            amount=60_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=11),
+            destination_account=hub,
+        )
+
+        assert forward["status"] == "rejected"
+        assert any(
+            hit["rule"] == "MULE_PASS_THROUGH" and hit["points"] == 25 for hit in forward["metadata"]["triggered_rules"]
+        )
+        assert "MULE_LINK" in rules_of(next_payer)
+
+    def test_one_payer_insisting_counts_as_one_person_for_the_destination(self):
+        """Quem é barrado três vezes pagando a mesma conta conta como uma pessoa só.
+
+        O FLAGGED_DESTINATION conta pagadores distintos, não tentativas: sem
+        isso, qualquer um marcaria a conta de um inocente insistindo sozinho.
+        E quem insiste não é marcado pelas próprias rejeições.
+        """
+        destination = PayloadGenerator.create_account(
+            participant="60701190", opening_date=PayloadGenerator.daytime(days_ago=3)
+        )
+        payer, device_id = PayloadGenerator.create_account(), new_device()
+        ObjectGenerator.build_history(payer, PayloadGenerator.create_account(participant="60701190"), device_id, [40, 35, 30, 25, 20], 10_000)
+        attempts = [
+            ObjectGenerator.analyze_pix(
+                amount=300_000 - attempt * 10_000,
+                transaction_date=PayloadGenerator.daytime(days_ago=1, hour=15, minute=attempt * 20),
+                source_account=payer,
+                destination_account=destination,
+                device_id=device_id,
+            )
+            for attempt in range(3)
+        ]
+        other_payer = ObjectGenerator.analyze_pix(
+            amount=30_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=17),
+            destination_account=destination,
+        )
+
+        assert {attempt["status"] for attempt in attempts} == {"rejected"}
+        assert all("FLAGGED_DESTINATION" not in rules_of(attempt) for attempt in attempts)
+        assert other_payer["metadata"]["signals"]["destination_flagged_payers_30d"] == 1
+        flagged = next(hit for hit in other_payer["metadata"]["triggered_rules"] if hit["rule"] == "FLAGGED_DESTINATION")
+        assert flagged["points"] == 35
+
     def test_paying_the_mule_after_it_was_caught_forwarding(self):
         """A ligação vale nos dois sentidos: quem pagar o próprio laranja depois do repasse barrado também é barrado."""
         mule_cpf = RandomGenerator.generate_cpf()
@@ -518,21 +567,6 @@ class TestScams:
         for response in (to_another_mule, next_day, new_victim):
             assert response["status"] == "rejected"
             assert "MULE_ACCOUNT_BLOCKED" in rules_of(response)
-
-    def test_daily_ceiling_counts_what_already_left(self):
-        """R$ 12 mil passa com 2FA; outros R$ 12 mil no mesmo dia estouram o teto de R$ 20 mil e também pedem 2FA."""
-        source_account = PayloadGenerator.create_account()
-        first = ObjectGenerator.analyze_pix(
-            amount=1_200_000, transaction_date=PayloadGenerator.daytime(days_ago=1, hour=10), source_account=source_account
-        )
-        second = ObjectGenerator.analyze_pix(
-            amount=1_200_000, transaction_date=PayloadGenerator.daytime(days_ago=1, hour=16), source_account=source_account
-        )
-
-        assert first["status"] == "two_factor_required"
-        assert second["status"] == "two_factor_required"
-        assert "DAILY_LIMIT" in rules_of(second)
-        assert second["metadata"]["signals"]["exposure_last_24h"] == 1_200_000
 
     def test_rejection_that_is_not_about_the_destination_does_not_flag_it(self):
         """Pix barrado pelo teto noturno do pagador não suja a conta de quem ia receber."""

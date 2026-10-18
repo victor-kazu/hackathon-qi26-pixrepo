@@ -14,19 +14,6 @@ SERVICE_NAME = os.environ.get("SERVICE_NAME", "pix-antifraude-api")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN")
 
-# A API de boletos: o serviço de fora que este projeto chama pra emitir
-# uma cobrança (veja src/connectors/). O endereço vem do ambiente, como
-# tudo aqui — na sua máquina ele aponta pro mock server do sábado 4; em
-# produção, apontaria pro serviço de verdade. O código não sabe a
-# diferença, e esse é o ponto.
-BANKSLIP_API_URL = os.environ.get("BANKSLIP_API_URL", "http://localhost:8080")
-BANKSLIP_API_INTERNAL_TOKEN = os.environ.get("BANKSLIP_API_INTERNAL_TOKEN", "default_token")
-
-# Quantos segundos esperar pelo serviço de boletos antes de desistir.
-# Todo connector TEM um timeout — o porquê está em
-# src/connectors/rest_connector.py.
-BANKSLIP_API_TIMEOUT = int(os.environ.get("BANKSLIP_API_TIMEOUT", "5"))
-
 # Rotas públicas: não exigem o header INTERNAL-TOKEN. São as duas que
 # precisam responder pra quem ainda não tem token nenhum: a raiz, que
 # diz quem é este serviço, e o health check, que o Docker consulta pra

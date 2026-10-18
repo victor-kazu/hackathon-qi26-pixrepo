@@ -584,7 +584,7 @@ MATURE = dict(approved_count_total=p.MATURE_MIN_APPROVED)
 
 
 class TestMaturePayer:
-    """Racha do bar, família no mesmo celular, folha de pagamento: conta madura não é robô."""
+    """Acerto da viagem, família no mesmo celular, folha de pagamento: conta madura não é robô."""
 
     def test_maturity_needs_old_account_and_history(self):
         assert make_signals(History(**MATURE)).is_mature_payer is True

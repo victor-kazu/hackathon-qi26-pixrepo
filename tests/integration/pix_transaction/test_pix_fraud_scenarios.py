@@ -57,7 +57,7 @@ class TestGoodCustomers:
         assert rules_of(response) == ["SELF_TRANSFER"]
 
     def test_five_friends_in_four_minutes_from_a_mature_account_is_not_a_bot(self):
-        """Racha do bar: conta antiga com histórico paga 5 amigos em 4 minutos. Pede 2FA, não barra."""
+        """Acerto da viagem: conta antiga com histórico paga 5 amigos em 4 minutos. Pede 2FA, não barra."""
         source_account, device_id = PayloadGenerator.create_account(), new_device()
         ObjectGenerator.build_history(source_account, PayloadGenerator.create_account(participant="60701190"), device_id, [40, 35, 20, 10, 5], 3_000)
 

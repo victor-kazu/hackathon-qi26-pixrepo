@@ -300,7 +300,7 @@ SELF_TRANSFER_MIN_DESTINATION_DAYS = 30
 # Robô de rajada e fazenda de aparelhos usam conta nova: conta aberta
 # com dados de terceiros, ou comprada, e descartada depois do golpe. Uma
 # conta com 6 meses e histórico aprovado pagando 5 amigos em 4 minutos é
-# o racha do bar; três pessoas antigas no mesmo celular é uma família.
+# o acerto de contas da viagem; três pessoas antigas no mesmo celular é uma família.
 # Para o pagador maduro, essas duas regras pedem 2FA em vez de barrar,
 # e só barram num volume que nenhum uso humano explica.
 MATURE_ACCOUNT_DAYS = 180

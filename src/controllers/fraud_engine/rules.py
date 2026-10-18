@@ -60,7 +60,7 @@ def velocity_bot(signals: Signals) -> Optional[RuleHit]:
 
     Conta nova é o que o robô usa: 5 tentativas em 5 min já barram. Para o
     pagador maduro (conta antiga com histórico aprovado), 5 em 5 min é o
-    racha do bar, e quem pede o 2FA é o VELOCITY_BURST; barrar só a partir
+    acerto de contas da viagem, e quem pede o 2FA é o VELOCITY_BURST; barrar só a partir
     de 10 (pessoa física) ou 30 (empresa pagando folha em lote).
     """
     attempts = signals.history.attempts_short_window + 1

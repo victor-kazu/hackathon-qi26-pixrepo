@@ -199,7 +199,7 @@ sequenceDiagram
 > - **Qual é:** decidir, para cada Pix, entre pedir 2FA e rejeitar, sem travar o cliente bom e sem deixar passar o golpe em que o 2FA não ajuda.
 > - **Por que é difícil:** a solução óbvia (somar sinais de risco num placar só e pedir 2FA quando ele sobe) falha nos dois sentidos:
 >   - **Golpe passa:** no golpe de engenharia social e na coação, quem paga é a própria vítima, no aparelho de sempre. Os sinais de confiança no pagador descontam pontos, o 2FA aparece, a vítima confirma e o dinheiro sai.
->   - **Cliente bom é barrado:** regras duras calibradas para o fraudador (5 Pix em 5 minutos, 3 pessoas num aparelho) barram o racha do bar e a família que divide o celular. E o "mesmo titular", que deveria ser o Pix mais seguro, vira a porta do golpe da conta-espelho, aberta no CPF da vítima.
+>   - **Cliente bom é barrado:** regras duras calibradas para o fraudador (5 Pix em 5 minutos, 3 pessoas num aparelho) barram quem acerta as contas da viagem com os amigos e a família que divide o celular. E o "mesmo titular", que deveria ser o Pix mais seguro, vira a porta do golpe da conta-espelho, aberta no CPF da vítima.
 > - **Como o desenho resolve:**
 >   - **Dois placares separados:** identidade (2FA resolve) e destino (rejeita, porque o 2FA não resolve). Um bônus só desconta da própria categoria, então confiar no pagador nunca "paga" o risco do destino.
 >   - **Tabela de decisão fixa:** regra dura, depois destino ≥ 60, depois total ≥ 90, que rejeitam; depois total ≥ 40, que pede 2FA.

@@ -31,7 +31,7 @@ O resource valida o formato (JSON Schema). O controller valida o conteúdo (CPF/
 - **De destino:** somam no placar de destino, que rejeita, porque o 2FA não ajuda.
 - **Bônus de confiança:** descontam só da própria categoria.
 
-A política lê uma tabela de decisão fixa: regra dura, depois destino ≥ 60, depois total ≥ 90 (todas rejeitam), e por fim total ≥ 40 (pede 2FA). O controller grava o Pix, a análise e uma linha por regra acionada, na mesma transação. Os números da política ficam num único arquivo, cada um com o porquê, e foram calibrados com uma simulação de 150 clientes, 5 empresas e 14 tipos de fraude.
+A política lê uma tabela de decisão fixa: regra dura, depois destino ≥ 60, depois total ≥ 90 (todas rejeitam), e por fim total ≥ 40 (pede 2FA). O controller grava o Pix, a análise e uma linha por regra acionada, na mesma transação. Os números da política ficam num único arquivo, cada um com o porquê, e foram calibrados com uma simulação de 150 clientes, 5 empresas e 13 cenários de ataque.
 
 Alternativas descartadas:
 
@@ -68,14 +68,17 @@ erDiagram
         bigint amount "centavos, CHECK amount > 0"
         timestamptz transaction_date "fim de toda janela de historico"
         smallint utc_offset_minutes "fuso do cliente, para a hora local"
+        varchar source_branch "agencia pagadora, chave do lock"
         varchar source_account_number "lock e indice com agencia e data"
         timestamptz source_opening_date "idade da conta pagadora"
         varchar source_document_number "CPF ou CNPJ normalizado"
         char destination_participant "ISPB do destino"
+        varchar destination_branch "agencia do destino"
         varchar destination_account_number "indice com ISPB, agencia e data"
         timestamptz destination_opening_date "idade da conta destino"
         varchar destination_document_number "mesmo titular, fan-in"
         varchar device_id "indice com data"
+        varchar channel "canal do contrato"
         varchar ip "indice com data"
         numeric latitude "opcional"
         numeric longitude "opcional"
@@ -204,6 +207,6 @@ sequenceDiagram
 >   - **Conta própria comprovada:** o mesmo CPF só vale como transferência entre contas próprias se a conta de destino é antiga ou já conhecida.
 >   - **Teto diário que pede 2FA:** passar do teto de 24 h pede 2FA e nunca rejeita sozinho, porque esvaziar a conta com o celular destravado é tomada de conta, que o 2FA segura. O teto acompanha o histórico: 3x o maior dia dos últimos 90 dias (pessoa física com perfil), ou R$ 20 mil sem perfil.
 >   - **Teto noturno com saída:** acima de R$ 5.000 à noite o Pix é rejeitado, mesmo no aparelho de sempre, porque sob coação a vítima passa no 2FA. O cliente que precisa de um Pix maior ajusta o limite antes, e pelo Regulamento do Pix o aumento só vale depois de no mínimo 24 h, prazo que o sequestrador não tem. Esse ajuste é cadastral e não vem no payload, então fica como evolução: com ele no contrato, o teto passaria a ser o limite do cliente.
->   - **Laranja pego fica bloqueado:** o motor barra o repasse do laranja quando o dinheiro que entrou já parecia golpe. A partir daí a conta não envia (nem para outro laranja, outra central ou conta do mesmo CPF) e não recebe por 30 dias. Sem isso, a segunda tentativa abaixo da metade do valor recebido só pedia 2FA, que o dono do laranja passa.
+>   - **Laranja pego fica bloqueado:** o motor barra o repasse do laranja quando o dinheiro que entrou já parecia golpe. A partir daí a conta não envia (nem para outro laranja, outra central ou conta do mesmo CPF) e não recebe por 30 dias. Sem isso, a segunda tentativa abaixo da metade do valor recebido só pedia 2FA, que o dono do laranja passa. O custo: quando o repasse de dinheiro sujo é um falso positivo (a vaquinha de 6 amigos), o bloqueio derruba também os Pix seguintes que passam pela conta do organizador, enviados ou recebidos; na simulação de 300 clientes foram 2 Pix a mais.
 >   - **Funil com piso de valor:** muitos pagadores para a mesma pessoa física só pesam a partir de R$ 200 por Pix. O golpe em massa tira centenas ou milhares de cada vítima; o vendedor ambulante recebe de dezenas de clientes em ticket baixo e não pode cair no 2FA a cada venda.
 >   - **Calibragem medida:** cada número saiu da simulação. Com a semente 42: 89% dos clientes bons aprovados direto e nenhum rejeitado, com latência p99 de 39 ms.

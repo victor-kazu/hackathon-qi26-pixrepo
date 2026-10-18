@@ -19,7 +19,7 @@ Por isso o motor mede o risco em duas dimensões separadas, e cada uma leva a um
 
 ## Como o motor de decisão funciona
 
-**1. O caminho do Pix pela API.** Cada camada só passa adiante o que já conferiu. Os quadros brancos são as respostas de erro; o verde é a resposta normal.
+**1. O caminho do Pix pela API.** Cada camada só passa adiante o que já conferiu. Os quadros cinza são as respostas de erro e os verdes, as de sucesso.
 
 ```mermaid
 flowchart LR
@@ -82,7 +82,7 @@ Princípios que guiaram as regras:
 
 ## Regras
 
-Três tipos de regra: Regras duras, regras referentes à identidade e regras referentes ao destino.
+As regras se dividem em três tipos: duras, de identidade e de destino. As regras da cadeia de laranjas e os bônus de confiança vêm em seções próprias.
 
 ### Regras duras (rejeitam sozinhas)
 
@@ -106,7 +106,7 @@ A sétima regra dura, `MULE_ACCOUNT_BLOCKED`, está na seção da cadeia de lara
 | `NIGHT_HIGH_VALUE` | Pix de PF entre 20h e 6h | > R$ 1.000 → +40 | Limite noturno padrão de PF da Res. BCB 142/2021. O cliente pode ter aumentado o limite, o que o motor não enxerga, então pede 2FA em vez de barrar. 40 = pede 2FA sozinho. |
 | `NIGHT_TOTAL` | Soma do que saiu da conta de PF desde as 20h, mais o Pix atual, com cada Pix abaixo do limite noturno | > R$ 3.000 → +40 | O limite do BCB é por Pix. Quem drena a conta de madrugada espalha Pix abaixo de R$ 1.000 por contas diferentes, sem repetir valor nem destino: o `SPLIT_PAYMENT` (mesmo destino) e o `STRUCTURING` (mesmo valor) não veem. A noite é tratada como um Pix só. |
 | `NEW_DEVICE` | A conta tem histórico, mas este aparelho não tem Pix aprovado nela há mais de 24 h | +30; +15 se > R$ 200 | Tomada de conta quase sempre começa em outro aparelho. As 24 h de maturação impedem "esquentar" o aparelho com um Pix de R$ 1. R$ 200 é o limite por Pix de aparelho novo do BC. |
-| `VELOCITY_BURST` | Tentativas em 5 min (ou em 1 h) | 3 em 5 min → +25; 4 → +40; 10 em 1 h → +20 | Rajada pode ser dividir a conta do restaurante, por isso pesa antes de barrar. Só a janela mais forte conta, para não pontuar duas vezes o mesmo fenômeno. |
+| `VELOCITY_BURST` | Tentativas em 5 min (ou em 1 h) | 3 em 5 min → +25; 4 → +40; 10 em 1 h → +20 | Rajada pode ser alguém acertando as contas da viagem com os amigos, por isso pesa antes de barrar. Só a janela mais forte conta, para não pontuar duas vezes o mesmo fenômeno. |
 | `PROBING_AFTER_REJECTION` | Pix rejeitados desta conta na última hora | +20 por rejeição, máx. +40 | Tentar de novo logo depois de ser barrado é o fraudador procurando o valor que passa. |
 | `IMPOSSIBLE_TRAVEL` | Igual à regra dura, mas no mesmo aparelho | +45 | No mesmo aparelho pode ser GPS falsificado ou VPN, então pede confirmação em vez de barrar. |
 | `NEW_SOURCE_ACCOUNT` | Conta pagadora recém-aberta movimentando ≥ R$ 1.000 | < 2 dias → +35; < 7 dias → +25 | Identidade sintética ou conta aberta só para girar dinheiro de golpe. |
@@ -130,7 +130,7 @@ A sétima regra dura, `MULE_ACCOUNT_BLOCKED`, está na seção da cadeia de lara
 
 ### Cadeia de laranjas (2FA não resolve)
 
-Golpe raramente para na primeira conta: a vítima paga um laranja, o laranja repassa em minutos para outra conta, às vezes uma conta central que junta o dinheiro de vários laranjas, e dali o dinheiro some, esse foi um exemplo dado pelo próprio banco central na disposição MED 2.0. O motor só enxerga o trecho da cadeia que passa pelos Pix que ele analisou, e olha um elo para cada lado. As duas regras de pontos somam no placar de destino porque quem paga é o próprio dono do laranja, que passa no 2FA. A terceira é dura: o laranja pego repassando fica bloqueado.
+Golpe raramente para na primeira conta: a vítima paga um laranja, o laranja repassa em minutos para outra conta, às vezes uma conta central que junta o dinheiro de vários laranjas, e dali o dinheiro some. É o exemplo que o próprio Banco Central usa ao apresentar o MED 2.0. O motor só enxerga o trecho da cadeia que passa pelos Pix que ele analisou, e olha um elo para cada lado. As duas regras de pontos somam no placar de destino porque quem paga é o próprio dono do laranja, que passa no 2FA. A terceira é dura: o laranja pego repassando fica bloqueado.
 
 A cadeia do teste de ponta a ponta, na ordem em que os Pix chegam. Em azul quem paga de boa-fé, em vermelho as contas da quadrilha. A seta laranja é o Pix que passou com 2FA e as vermelhas são os rejeitados:
 
@@ -295,7 +295,7 @@ Resultado com `--seed 42` (4.390 Pix, 737 medidos):
 
 Na drenagem noturna, nos dois fracionamentos e no robô, os primeiros Pix são iguais a uso normal e passam por desenho; a regra entra quando a soma ou a repetição aparece.
 
-Dos Pix de clientes bons, 88,9% passaram direto, 11,1% pediram 2FA e nenhum foi rejeitado; no uso do dia a dia, 97,7% passam direto. Latência do motor: p50 de 28 ms e p99 de 39 ms. Com outra semente e o dobro de clientes (`--seed 7 --customers 300`), os números se mantêm: 71,6% das tentativas e 80,8% do valor fraudado contidos, 87,0% dos clientes bons aprovados direto e 3 rejeitados em 902 (os três vêm da mesma vaquinha; veja abaixo).
+Dos Pix de clientes bons, 88,9% passaram direto, 11,1% pediram 2FA e nenhum foi rejeitado; no uso do dia a dia, 97,7% passam direto. Latência do motor: p50 de 28 ms e p99 de 39 ms. Com outra semente e o dobro de clientes (`--seed 7 --customers 300`), os números se mantêm: 87,0% dos clientes bons aprovados direto e 3 rejeitados em 902 (os três vêm da mesma vaquinha; veja abaixo).
 
 Os Pix bons de quem estava sendo atacado no mesmo dia ficam fora dessa conta, numa linha própria da saída: o motor tem motivo para desconfiar deles.
 

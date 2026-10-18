@@ -82,7 +82,7 @@ Princípios que guiaram as regras:
 
 ## Regras
 
-Valores em reais; no código ficam em centavos, em `src/controllers/fraud_engine/parameters.py`, cada um com o porquê ao lado. Janelas sempre terminam no `transaction_date` do Pix analisado.
+Três tipos de regra: Regras duras, regras referentes à identidade e regras referentes ao destino.
 
 ### Regras duras (rejeitam sozinhas)
 

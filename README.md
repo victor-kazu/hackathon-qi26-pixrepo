@@ -44,34 +44,29 @@ flowchart LR
     class ENG core
 ```
 
-**2. Como o motor decide.** As regras de pontos caem em uma de duas contas, identidade ou destino, e a política lê a tabela de cima para baixo: a primeira pergunta que responde "sim" decide.
+**2. Como o motor decide.** Cada regra soma pontos em uma de duas contas: identidade (o 2FA resolve) ou destino (o 2FA não resolve). Total é a soma das duas. A primeira pergunta que responde "sim" decide.
 
 ```mermaid
 flowchart TD
-    SIG["signals.py<br/>idade das contas, hora local, mediana,<br/>velocidade, aparelho, cadeia de laranjas"]
-    SIG --> RUL["rules.py · 30 regras"]
-    RUL --> HARD["7 regras duras<br/>sem pontos, rejeitam sozinhas"]
-    RUL --> IDT["Identidade<br/>é mesmo o cliente?<br/>2FA resolve"]
-    RUL --> BEN["Destino<br/>para onde vai o dinheiro?<br/>2FA não resolve"]
-
-    HARD --> Q1{"1. alguma regra<br/>dura disparou?"}
-    IDT --> Q1
-    BEN --> Q1
+    PIX(["Pix pontuado<br/>identidade + destino"])
+    PIX --> Q1{"Alguma regra<br/>dura disparou?"}
     Q1 -- sim --> REJ(["rejected"])
-    Q1 -- não --> Q2{"2. destino ≥ 60?"}
+    Q1 -- não --> Q2{"Destino ≥ 60?<br/>2FA não resolve"}
     Q2 -- sim --> REJ
-    Q2 -- não --> Q3{"3. total ≥ 90?<br/>identidade + destino"}
+    Q2 -- não --> Q3{"Total ≥ 90?"}
     Q3 -- sim --> REJ
-    Q3 -- não --> Q4{"4. total ≥ 40?"}
+    Q3 -- não --> Q4{"Total ≥ 40?"}
     Q4 -- sim --> TFA(["two_factor_required"])
     Q4 -- não --> APR(["approved"])
 
     classDef ok fill:#d3f9d8,stroke:#2b8a3e,color:#1b4332
     classDef warn fill:#fff3bf,stroke:#e67700,color:#5c3c00
     classDef bad fill:#ffe3e3,stroke:#c92a2a,color:#641e16
+    classDef start fill:#e7f5ff,stroke:#1971c2,color:#0b3d6b
     class APR ok
-    class TFA,IDT warn
-    class REJ,BEN,HARD bad
+    class TFA warn
+    class REJ bad
+    class PIX start
 ```
 
 O motor segue o Base Service: é regra de negócio, então mora na camada de controllers, em `src/controllers/fraud_engine/`. O controller busca o histórico pelo repository, entrega ao motor e grava o que ele decidiu. O motor é Python puro: não conhece banco nem HTTP. É isso que permite testar cada regra em unidade, em milissegundos, e reproduzir uma decisão a partir da metadata gravada.

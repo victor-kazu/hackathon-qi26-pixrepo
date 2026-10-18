@@ -132,6 +132,31 @@ A sétima regra dura, `MULE_ACCOUNT_BLOCKED`, está na seção da cadeia de lara
 
 Golpe raramente para na primeira conta: a vítima paga um laranja, o laranja repassa em minutos para outra conta, às vezes uma conta central que junta o dinheiro de vários laranjas, e dali o dinheiro some, esse foi um exemplo dado pelo próprio banco central na disposição MED 2.0. O motor só enxerga o trecho da cadeia que passa pelos Pix que ele analisou, e olha um elo para cada lado. As duas regras de pontos somam no placar de destino porque quem paga é o próprio dono do laranja, que passa no 2FA. A terceira é dura: o laranja pego repassando fica bloqueado.
 
+A cadeia do teste de ponta a ponta, na ordem em que os Pix chegam. Em azul quem paga de boa-fé, em vermelho as contas da quadrilha. A seta laranja é o Pix que passou com 2FA e as vermelhas são os rejeitados:
+
+```mermaid
+flowchart LR
+    V(["Vítima"])
+    L["Laranja<br/>conta aberta há 3 dias"]
+    C["Conta central"]
+    P(["Próximo cliente"])
+    O["Outro laranja"]
+    N(["Nova vítima"])
+
+    V -- "① R$ 3.000 · 2FA<br/>destino novo: 40 pontos" --> L
+    L -- "② repassa R$ 2.900<br/>rejected · MULE_PASS_THROUGH +60" --> C
+    P -- "③ R$ 600<br/>rejected · MULE_LINK +50" --> C
+    L -- "④ tenta de novo<br/>rejected · MULE_ACCOUNT_BLOCKED" --> O
+    N -- "⑤ paga o laranja<br/>rejected · MULE_ACCOUNT_BLOCKED" --> L
+
+    classDef victim fill:#e7f5ff,stroke:#1971c2,color:#0b3d6b
+    classDef mule fill:#ffe3e3,stroke:#c92a2a,color:#641e16
+    class V,P,N victim
+    class L,C,O mule
+    linkStyle 0 stroke:#e67700,stroke-width:2px
+    linkStyle 1,2,3,4 stroke:#c92a2a,stroke-width:2px
+```
+
 | Regra | Lógica | Parâmetros | Por quê |
 |-------|--------|------------|---------|
 | `MULE_PASS_THROUGH` | O **pagador** recebeu Pix nas últimas 24 h (aparece como destino no histórico, aprovados + 2FA) e, com este Pix, já repassou pelo menos metade do que recebeu | Recebido ≥ R$ 1.000. De ≥ 3 pagadores distintos (só PF) → +25. Se algum Pix de entrada já tinha risco de destino ≥ 40 → +60 | Receber de vários e repassar é o formato do laranja, mas também o da vaquinha do churrasco, então pesa pouco, e com o +25 o `PROFILE_AMOUNT_SPIKE` não conta (o valor alto é explicado pelo que entrou). Já repassar um dinheiro que o próprio motor achou que estava indo para um laranja é lavar dinheiro de golpe: rejeita sozinho. |

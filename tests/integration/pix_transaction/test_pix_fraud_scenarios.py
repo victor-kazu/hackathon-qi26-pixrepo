@@ -118,6 +118,75 @@ class TestGoodCustomers:
         assert "MULE_PASS_THROUGH" in rules_of(response)
         assert "PROFILE_AMOUNT_SPIKE" not in rules_of(response)
 
+    def test_venue_paid_by_a_group_collection_is_not_linked_to_a_chain(self):
+        """A pousada que recebeu a vaquinha não vira conta de cadeia: o próximo hóspede paga normalmente.
+
+        Até a v11, o repasse fraco (+25) aprovado ligava a pousada pelo
+        MULE_LINK (+50) por 30 dias, e o primeiro Pix de um hóspede novo
+        acima de R$ 500 somava 60 e era rejeitado.
+        """
+        cpf = RandomGenerator.generate_cpf()
+        organizer_as_destination = PayloadGenerator.create_account(participant="32402502", document_number=cpf)
+        organizer = {key: value for key, value in organizer_as_destination.items() if key != "participant"}
+        venue = PayloadGenerator.create_account(participant="60701190")
+        device_id = new_device()
+        ObjectGenerator.build_history(organizer, PayloadGenerator.create_account(participant="60701190"), device_id, [40, 35, 20, 10, 5], 8_000)
+        for minute in (0, 10, 20, 30):
+            ObjectGenerator.analyze_pix(
+                amount=40_000,
+                transaction_date=PayloadGenerator.daytime(days_ago=1, hour=10, minute=minute),
+                destination_account=organizer_as_destination,
+            )
+        collection = ObjectGenerator.analyze_pix(
+            amount=160_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=12),
+            source_account=organizer,
+            destination_account=venue,
+            device_id=device_id,
+        )
+
+        next_guest = ObjectGenerator.analyze_pix(
+            amount=80_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=15),
+            destination_account=venue,
+        )
+
+        assert collection["status"] == "approved"
+        assert "MULE_PASS_THROUGH" in rules_of(collection)
+        assert next_guest["status"] == "approved"
+        assert "MULE_LINK" not in rules_of(next_guest)
+
+    def test_weak_forward_that_ended_rejected_still_links_the_hub(self):
+        """Laranja de conta nova que recebe de 3 vítimas sem sinal nenhum: o repasse fraco soma e é rejeitado, e a central fica ligada."""
+        mule_as_destination = PayloadGenerator.create_account(
+            participant="60701190", opening_date=PayloadGenerator.daytime(days_ago=40)
+        )
+        mule_as_source = {key: value for key, value in mule_as_destination.items() if key != "participant"}
+        hub = PayloadGenerator.create_account(participant="18236120", opening_date=PayloadGenerator.daytime(days_ago=3))
+        for minute in (0, 10, 20):
+            ObjectGenerator.analyze_pix(
+                amount=40_000,
+                transaction_date=PayloadGenerator.daytime(days_ago=1, hour=10, minute=minute),
+                destination_account=mule_as_destination,
+            )
+        forward = ObjectGenerator.analyze_pix(
+            amount=115_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=10, minute=40),
+            source_account=mule_as_source,
+            destination_account=hub,
+        )
+        next_payer = ObjectGenerator.analyze_pix(
+            amount=60_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=11),
+            destination_account=hub,
+        )
+
+        assert forward["status"] == "rejected"
+        assert any(
+            hit["rule"] == "MULE_PASS_THROUGH" and hit["points"] == 25 for hit in forward["metadata"]["triggered_rules"]
+        )
+        assert "MULE_LINK" in rules_of(next_payer)
+
     def test_street_vendor_receives_from_many_customers_and_pays_the_supplier(self):
         """Pipoqueiro: 15 clientes pagam R$ 70 na mesma tarde, e à noite ele paga o fornecedor.
 

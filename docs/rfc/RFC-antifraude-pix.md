@@ -4,7 +4,7 @@
 |---|---|
 | **Time** | Grupo 3 · Victor Kazunori · Matheus Reis |
 | **Data** | 17/10/2026 |
-| **Versão** | 1 (política `2026.10.18-v11`) |
+| **Versão** | 1 (política `2026.10.18-v12`) |
 
 ## Contextualização
 

@@ -7,7 +7,7 @@ análise, e é o que permite explicar uma decisão antiga com a regra que
 valia no dia.
 """
 
-POLICY_VERSION = "2026.10.18-v11"
+POLICY_VERSION = "2026.10.18-v12"
 
 REAIS = 100
 
@@ -254,7 +254,10 @@ MULE_DIRTY_MONEY_POINTS = 60
 # 2. O DESTINO é um elo? Nos últimos 30 dias, algum Pix já pego como
 #    repasse de laranja (MULE_PASS_THROUGH) saiu desta conta ou chegou
 #    nela. Pagar a conta central de uma cadeia é o fim do golpe: 50,
-#    que com o primeiro Pix para ela (+10) já rejeita.
+#    que com o primeiro Pix para ela (+10) já rejeita. Só liga a conta o
+#    repasse de dinheiro sujo (+60) ou o repasse que acabou rejeitado: o
+#    repasse fraco (+25) aprovado é a vaquinha paga à pousada, e ligar a
+#    pousada à cadeia rejeitaria o próximo hóspede.
 MULE_LINK_WINDOW_DAYS = 30
 MULE_LINK_POINTS = 50
 #

@@ -168,7 +168,7 @@ class PixTransactionController(BaseController):
             source_inbound_amount=inbound_amount,
             source_inbound_suspicious_payers=inbound_suspicious_payers,
             destination_mule_links=repository.count_destination_mule_links(
-                facts, timedelta(days=p.MULE_LINK_WINDOW_DAYS), MULE_PASS_THROUGH
+                facts, timedelta(days=p.MULE_LINK_WINDOW_DAYS), MULE_PASS_THROUGH, p.MULE_DIRTY_MONEY_POINTS
             ),
             source_caught_mule=self._is_caught_mule(
                 facts, (facts.source_branch, facts.source_account_number, facts.source_document_number)

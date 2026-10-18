@@ -281,8 +281,15 @@ class PixTransactionRepository:
         )
         return payers, int(amount), suspicious_payers
 
-    def count_destination_mule_links(self, facts: "TransactionFacts", window: timedelta, rule_code: str) -> int:
-        """Contas pegas repassando dinheiro de golpe que pagaram este destino ou que SÃO este destino."""
+    def count_destination_mule_links(
+        self, facts: "TransactionFacts", window: timedelta, rule_code: str, dirty_points: int
+    ) -> int:
+        """Contas pegas repassando dinheiro de golpe que pagaram este destino ou que SÃO este destino.
+
+        Só vale o repasse de dinheiro sujo (pontos >= dirty_points) ou o
+        repasse que acabou rejeitado. O repasse fraco aprovado é a vaquinha
+        entregue à pousada, e não pode sujar a pousada.
+        """
         destination_is_the_mule = and_(
             PixTransaction.source_branch == facts.destination_branch,
             PixTransaction.source_account_number == facts.destination_account_number,
@@ -294,9 +301,14 @@ class PixTransactionRepository:
             )
             .select_from(PixTransaction)
             .join(PixTransaction.analysis)
+            .join(PixAnalysis.status)
             .join(PixAnalysis.rule_hits)
             .filter(
                 PixAnalysisRuleHit.rule_code == rule_code,
+                or_(
+                    PixAnalysisRuleHit.points >= dirty_points,
+                    PixAnalysisStatus.enumerator == PixAnalysisStatus.REJECTED,
+                ),
                 or_(self._destination_filter(facts), destination_is_the_mule),
                 *self._window_filter(facts, window),
             )

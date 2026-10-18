@@ -88,7 +88,7 @@ Valores em reais; no código ficam em centavos, em `src/controllers/fraud_engine
 | Regra | Lógica | Parâmetros | Por quê |
 |-------|--------|------------|---------|
 | `NEW_DESTINATION_ACCOUNT` | Idade da conta destino na data do Pix (não vale para transferência entre contas próprias; veja `SELF_TRANSFER`) | < 7 dias → +30; < 30 dias → +15 | Conta laranja nasce para receber um golpe e é abandonada em dias. |
-| `DESTINATION_FAN_IN` | Pagadores distintos para a mesma conta destino em 24 h, contando o atual | PF: ≥ 5 → +35, ≥ 10 → +50. PJ: limiares 10x | Muitos CPFs pagando a mesma pessoa física numa tarde é golpe em massa em andamento. Comércio (CNPJ) recebe de muita gente por natureza. |
+| `DESTINATION_FAN_IN` | Pagadores distintos para a mesma conta destino em 24 h, contando o atual. Só conta Pix a partir de R$ 200, e o Pix atual também precisa ter R$ 200 ou mais | PF: ≥ 5 → +35, ≥ 10 → +50. PJ: limiares 10x | Muitos CPFs pagando a mesma pessoa física numa tarde é golpe em massa em andamento. Comércio (CNPJ) recebe de muita gente por natureza. O piso de valor protege quem vende como pessoa física: o pipoqueiro recebe de dezenas de clientes por dia em ticket baixo, enquanto o golpe tira centenas ou milhares de cada vítima. Sem o piso, do 10º cliente em diante todo Pix pedia 2FA, e o pagamento ao fornecedor era rejeitado como repasse de dinheiro suspeito. |
 | `FLAGGED_DESTINATION` | **Outros** pagadores distintos que tiveram Pix para este destino rejeitado por risco do destino (destino ≥ 60) nos últimos 30 dias | ≥ 1 → +35; ≥ 3 → +50 | Reputação de rede: se alguém já foi barrado pagando essa conta, a próxima vítima está a caminho. Só conta rejeição causada pelo destino (o celular roubado tentando pagar a mãe da vítima não suja a conta da mãe) e conta pessoas, não tentativas, para que ninguém consiga marcar a conta de um inocente insistindo sozinho. É pontuação com janela, e não blacklist permanente, porque uma lista dura se alimenta sozinha: a conta marcada passa a ter tudo rejeitado e nunca sai. Uma lista de fraude confirmada (analista ou marcação de fraude do BC no DICT) seria a evolução, mas exige uma rota de cadastro fora do escopo. |
 | `PROFILE_AMOUNT_SPIKE` | Valor ÷ mediana dos aprovados em 90 dias (piso de R$ 100). Só com ≥ 5 Pix no histórico | > 3x → +20; > 10x → +35 | A vítima de golpe manda um valor fora do seu padrão. Com menos de 5 Pix não existe padrão, e a regra fica neutra. |
 | `STRUCTURING` | Pix de valor idêntico desta conta na última hora, contando o atual | ≥ 3 → +20 | Fracionar uma quantia em partes iguais para ficar abaixo dos tetos. Se os pedaços vão para o mesmo destino, quem pontua é o `SPLIT_PAYMENT`, para não contar duas vezes. |
@@ -171,7 +171,7 @@ A resposta segue o contrato e explica a decisão na `metadata`:
     ],
     "signals": {"local_hour": 22, "is_night": true, "destination_account_age_days": 7.55, "...": "..."},
     "thresholds": {"two_factor_required": 40, "rejected": 90, "rejected_by_beneficiary": 60},
-    "policy_version": "2026.10.17-v7",
+    "policy_version": "2026.10.18-v8",
     "processing_time_ms": 21.4,
     "pix_id": "pix-000123"
   }
@@ -208,7 +208,7 @@ Resultado com `--seed 42` (4.390 Pix, 737 medidos):
 
 | Clientes bons | Pix | Aprovado | 2FA | Rejeitado |
 |---|---:|---:|---:|---:|
-| Dia a dia | 302 | 99,3% | 0,7% | 0,0% |
+| Dia a dia | 302 | 99,7% | 0,3% | 0,0% |
 | Aluguel para o mesmo locador | 42 | 95,2% | 4,8% | 0,0% |
 | Entre contas próprias | 13 | 92,3% | 7,7% | 0,0% |
 | Cliente novo, Pix comum | 9 | 100,0% | 0,0% | 0,0% |
@@ -236,13 +236,13 @@ Resultado com `--seed 42` (4.390 Pix, 737 medidos):
 
 Na drenagem noturna, nos dois fracionamentos e no robô, os primeiros Pix são iguais a uso normal e passam por desenho; a regra entra quando a soma ou a repetição aparece.
 
-Dos Pix de clientes bons, 90,0% passaram direto, 10,0% pediram 2FA e nenhum foi rejeitado; no uso do dia a dia, 99% passam direto. Latência do motor: p50 de 26 ms e p99 de 38 ms. Com outra semente e o dobro de clientes (`--seed 7 --customers 300`), os números se mantêm: 89,5% dos clientes bons aprovados direto e 1 rejeitado em 902.
+Dos Pix de clientes bons, 90,2% passaram direto, 9,8% pediram 2FA e nenhum foi rejeitado; no uso do dia a dia, 99,7% passam direto. Latência do motor: p50 de 27 ms e p99 de 37 ms. Com outra semente e o dobro de clientes (`--seed 7 --customers 300`), os números se mantêm: 89,5% dos clientes bons aprovados direto e 1 rejeitado em 902.
 
 Os Pix bons de quem estava sendo atacado no mesmo dia ficam fora dessa conta, numa linha própria da saída: o motor tem motivo para desconfiar deles.
 
 O que sobra aprovado na fraude é o começo de cada padrão. Os primeiros pedaços de um fracionamento ou de uma drenagem noturna, e os três primeiros Pix de um robô, são iguais a uso normal; a regra só enxerga a partir da soma ou da repetição. A drenagem noturna deixa passar por desenho até R$ 3.000 por noite. Dos seis laranjas da cadeia, só dois chegaram a receber dinheiro (as outras vítimas foram barradas no primeiro elo), e os dois foram barrados ao repassar; quem pagou a conta central depois foi barrado pelo `MULE_LINK`.
 
-A fricção dos clientes bons se concentra em dois lugares. O Pix alto de cliente sem histórico pede 2FA por decisão de política. A folha paga Pix a Pix pelo app pede 2FA a partir do 4º funcionário, por velocidade; como o motor não recebe o resultado do 2FA, esses Pix nunca viram "aprovados" e a relação com o funcionário não ganha o bônus de confiança no mês seguinte. A vaquinha era o falso positivo mais caro até a v6: quem recebe dos amigos e repassa tudo para a pousada somava `MULE_PASS_THROUGH` (+25) com `PROFILE_AMOUNT_SPIKE` (até +35), as duas medindo a mesma estranheza, e uma em cada seis era rejeitada. Na v7 o pico de valor não conta quando o repasse fraco dispara. Sobra um caso: com 6 amigos, o 6º Pix de entrada pode somar fan-in (+35) e pico de valor (+20) e chegar a 55, e aí o repasse passa a contar como dinheiro suspeito (+60). Foi o único cliente bom rejeitado na rodada de 300 clientes.
+A fricção dos clientes bons se concentra em dois lugares. O Pix alto de cliente sem histórico pede 2FA por decisão de política. A folha paga Pix a Pix pelo app pede 2FA a partir do 4º funcionário, por velocidade; como o motor não recebe o resultado do 2FA, esses Pix nunca viram "aprovados" e a relação com o funcionário não ganha o bônus de confiança no mês seguinte. A vaquinha era o falso positivo mais caro até a v6: quem recebe dos amigos e repassa tudo para a pousada somava `MULE_PASS_THROUGH` (+25) com `PROFILE_AMOUNT_SPIKE` (até +35), as duas medindo a mesma estranheza, e uma em cada seis era rejeitada. Na v7 o pico de valor não conta quando o repasse fraco dispara. Sobra um caso: com 6 amigos, o 6º Pix de entrada pode somar fan-in (+35) e pico de valor (+20) e chegar a 55, e aí o repasse passa a contar como dinheiro suspeito (+60). Foi o único cliente bom rejeitado na rodada de 300 clientes. Na v8, o funil de pagadores passou a contar só Pix a partir de R$ 200, para não travar o vendedor ambulante que recebe de muitos clientes em ticket baixo; nenhum cenário de fraude da simulação mudou.
 
 **Premissa.** A abertura de conta é validada por outra API, com reconhecimento facial: o motor parte do princípio de que o titular é quem diz ser. Por isso a conta aberta com documento roubado, que o `simulate.py` ainda gera, fica fora da tabela. O risco que sobra é o titular vender ou alugar a conta para o golpe, e esse é tratado pelas regras de destino (conta nova, `MULE_PASS_THROUGH` e `MULE_LINK`).
 

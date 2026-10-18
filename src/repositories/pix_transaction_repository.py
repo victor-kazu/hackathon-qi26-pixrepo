@@ -210,10 +210,11 @@ class PixTransactionRepository:
 
     # ─── Histórico do destino ───────────────────────────────────────
 
-    def count_destination_distinct_payers(self, facts: "TransactionFacts", window: timedelta) -> int:
-        """Quantos pagadores distintos mandaram Pix para este destino, contando o atual."""
+    def count_destination_distinct_payers(self, facts: "TransactionFacts", window: timedelta, min_amount: int) -> int:
+        """Quantos pagadores distintos mandaram Pix de min_amount ou mais para este destino, contando o atual."""
         query = self.session.query(func.count(func.distinct(PixTransaction.source_document_number))).filter(
             self._destination_filter(facts),
+            PixTransaction.amount >= min_amount,
             PixTransaction.source_document_number != facts.source_document_number,
             *self._window_filter(facts, window),
         )

@@ -259,13 +259,23 @@ class TestDestination:
     def test_fan_in_threshold_is_higher_for_companies(self):
         payers = History(destination_distinct_payers=p.FAN_IN_PF_PAYERS)
 
-        assert "DESTINATION_FAN_IN" in rule_codes(make_signals(payers))
-        assert "DESTINATION_FAN_IN" not in rule_codes(make_signals(payers, destination_document_number="11222333000181"))
+        amount = p.FAN_IN_MIN_AMOUNT
+        assert "DESTINATION_FAN_IN" in rule_codes(make_signals(payers, amount=amount))
+        assert "DESTINATION_FAN_IN" not in rule_codes(
+            make_signals(payers, amount=amount, destination_document_number="11222333000181")
+        )
 
     def test_fan_in_weighs_more_from_ten_payers(self):
-        hit = find_hit(make_signals(History(destination_distinct_payers=p.FAN_IN_PF_HIGH_PAYERS)), "DESTINATION_FAN_IN")
+        history = History(destination_distinct_payers=p.FAN_IN_PF_HIGH_PAYERS)
+        hit = find_hit(make_signals(history, amount=p.FAN_IN_MIN_AMOUNT), "DESTINATION_FAN_IN")
 
         assert hit.points == p.FAN_IN_HIGH_POINTS
+
+    def test_fan_in_ignores_small_tickets(self):
+        """Vendedor ambulante: dezenas de clientes por dia, cada um pagando pouco."""
+        history = History(destination_distinct_payers=50)
+
+        assert "DESTINATION_FAN_IN" not in rule_codes(make_signals(history, amount=p.FAN_IN_MIN_AMOUNT - 1))
 
     def test_flagged_destination(self):
         one = find_hit(make_signals(History(destination_flagged_payers=1)), "FLAGGED_DESTINATION")

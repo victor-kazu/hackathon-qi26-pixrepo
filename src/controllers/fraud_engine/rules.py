@@ -336,6 +336,9 @@ def new_destination_account(signals: Signals) -> Optional[RuleHit]:
 
 
 def destination_fan_in(signals: Signals) -> Optional[RuleHit]:
+    if signals.facts.amount < p.FAN_IN_MIN_AMOUNT:
+        return None
+
     payers = signals.history.destination_distinct_payers
     threshold = p.FAN_IN_PF_PAYERS
     high_threshold = p.FAN_IN_PF_HIGH_PAYERS
@@ -352,7 +355,8 @@ def destination_fan_in(signals: Signals) -> Optional[RuleHit]:
 
     return RuleHit(
         "DESTINATION_FAN_IN", BENEFICIARY, points, False,
-        f"destino recebeu de {payers} pagadores distintos em {p.FAN_IN_WINDOW_HOURS} h",
+        f"destino recebeu de {payers} pagadores distintos em {p.FAN_IN_WINDOW_HOURS} h, "
+        f"a partir de {_reais(p.FAN_IN_MIN_AMOUNT)} cada",
     )
 
 

@@ -159,7 +159,7 @@ class PixTransactionController(BaseController):
             ),
             previous_location=self._previous_location(facts),
             destination_distinct_payers=repository.count_destination_distinct_payers(
-                facts, timedelta(hours=p.FAN_IN_WINDOW_HOURS)
+                facts, timedelta(hours=p.FAN_IN_WINDOW_HOURS), p.FAN_IN_MIN_AMOUNT
             ),
             destination_flagged_payers=repository.count_destination_flagged_payers(
                 facts, timedelta(days=p.FLAGGED_DESTINATION_WINDOW_DAYS), p.REJECT_BENEFICIARY_SCORE

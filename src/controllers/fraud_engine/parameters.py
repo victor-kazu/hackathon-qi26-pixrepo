@@ -7,7 +7,7 @@ análise, e é o que permite explicar uma decisão antiga com a regra que
 valia no dia.
 """
 
-POLICY_VERSION = "2026.10.17-v7"
+POLICY_VERSION = "2026.10.18-v8"
 
 REAIS = 100
 
@@ -181,7 +181,11 @@ SOURCE_NEW_MIN_AMOUNT = 1_000 * REAIS
 # em 24 h. É a assinatura do golpe em massa (falso parente, falsa venda).
 # PJ recebe de muita gente por natureza (é um comércio), então o limiar
 # é 10x maior.
+# Só contam Pix a partir de FAN_IN_MIN_AMOUNT: o golpe em massa tira
+# centenas ou milhares de cada vítima, e o vendedor ambulante (pipoca,
+# feira) recebe de dezenas de clientes por dia em ticket baixo.
 FAN_IN_WINDOW_HOURS = 24
+FAN_IN_MIN_AMOUNT = 200 * REAIS
 FAN_IN_PF_PAYERS = 5
 FAN_IN_PF_HIGH_PAYERS = 10
 FAN_IN_PJ_MULTIPLIER = 10

@@ -118,6 +118,38 @@ class TestGoodCustomers:
         assert "MULE_PASS_THROUGH" in rules_of(response)
         assert "PROFILE_AMOUNT_SPIKE" not in rules_of(response)
 
+    def test_street_vendor_receives_from_many_customers_and_pays_the_supplier(self):
+        """Pipoqueiro: 15 clientes pagam R$ 70 na mesma tarde, e à noite ele paga o fornecedor.
+
+        Ticket baixo não entra no funil de pagadores. Antes da v8, do 10º
+        cliente em diante todo Pix caía no 2FA, e o pagamento ao fornecedor
+        era rejeitado como repasse de dinheiro suspeito.
+        """
+        cpf = RandomGenerator.generate_cpf()
+        vendor_as_destination = PayloadGenerator.create_account(participant="32402502", document_number=cpf)
+        vendor = {key: value for key, value in vendor_as_destination.items() if key != "participant"}
+        device_id = new_device()
+        ObjectGenerator.build_history(vendor, PayloadGenerator.create_account(participant="60701190"), device_id, [40, 35, 20, 10, 5], 30_000)
+
+        sales = [
+            ObjectGenerator.analyze_pix(
+                amount=7_000,
+                transaction_date=PayloadGenerator.daytime(days_ago=1, hour=15, minute=minute * 3),
+                destination_account=vendor_as_destination,
+            )
+            for minute in range(15)
+        ]
+        supplier_payment = ObjectGenerator.analyze_pix(
+            amount=80_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=19),
+            source_account=vendor,
+            device_id=device_id,
+        )
+
+        assert {sale["status"] for sale in sales} == {"approved"}
+        assert all("DESTINATION_FAN_IN" not in rules_of(sale) for sale in sales)
+        assert supplier_payment["status"] == "approved"
+
 
 class TestAccountTakeover:
     def test_new_device_asks_for_two_factor_and_then_hits_the_daily_limit(self):

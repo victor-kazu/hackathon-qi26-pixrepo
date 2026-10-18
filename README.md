@@ -130,7 +130,7 @@ A sétima regra dura, `MULE_ACCOUNT_BLOCKED`, está na seção da cadeia de lara
 
 ### Cadeia de laranjas (2FA não resolve)
 
-Golpe raramente para na primeira conta: a vítima paga um laranja, o laranja repassa em minutos para outra conta, às vezes uma conta central que junta o dinheiro de vários laranjas, e dali o dinheiro some. O motor só enxerga o trecho da cadeia que passa pelos Pix que ele analisou, e olha um elo para cada lado. As duas regras de pontos somam no placar de destino porque quem paga é o próprio dono do laranja, que passa no 2FA. A terceira é dura: o laranja pego repassando fica bloqueado.
+Golpe raramente para na primeira conta: a vítima paga um laranja, o laranja repassa em minutos para outra conta, às vezes uma conta central que junta o dinheiro de vários laranjas, e dali o dinheiro some, esse foi um exemplo dado pelo próprio banco central na disposição MED 2.0. O motor só enxerga o trecho da cadeia que passa pelos Pix que ele analisou, e olha um elo para cada lado. As duas regras de pontos somam no placar de destino porque quem paga é o próprio dono do laranja, que passa no 2FA. A terceira é dura: o laranja pego repassando fica bloqueado.
 
 | Regra | Lógica | Parâmetros | Por quê |
 |-------|--------|------------|---------|

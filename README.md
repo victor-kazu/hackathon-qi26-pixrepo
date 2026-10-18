@@ -8,7 +8,7 @@ Motor antifraude de Pix: uma API que recebe um Pix, compara com o histórico de 
 
 O 2FA prova que **quem está no app é o dono da conta**. Ele protege contra **tomada de conta**: celular roubado, golpista logado em outro aparelho, sessão clonada.
 
-Ele **não** protege contra **golpe de engenharia social** (falso parente, falsa central, falso vendedor) nem contra **coação**. Nesses casos quem faz o Pix é a própria vítima, com o próprio celular, e ela passa no 2FA sem pensar duas vezes. Pedir 2FA aí é fricção que não protege ninguém.
+Ele **não** protege contra **golpe de engenharia social** (falso parente, falsa central, falso vendedor) nem contra **coação**. Nesses casos quem faz o Pix é a própria vítima, com o próprio celular, e ela passa no 2FA sem pensar duas vezes. Pedir 2FA nessa situação é fricção que não protege ninguém.
 
 Por isso o motor mede o risco em duas dimensões separadas, e cada uma leva a uma decisão diferente:
 
@@ -19,7 +19,7 @@ Por isso o motor mede o risco em duas dimensões separadas, e cada uma leva a um
 
 ## Como o motor de decisão funciona
 
-**1. O caminho do Pix pela API.** Cada camada só passa adiante o que já conferiu. Os quadros cinza são as respostas de erro; o verde é a resposta normal.
+**1. O caminho do Pix pela API.** Cada camada só passa adiante o que já conferiu. Os quadros brancos são as respostas de erro; o verde é a resposta normal.
 
 ```mermaid
 flowchart LR

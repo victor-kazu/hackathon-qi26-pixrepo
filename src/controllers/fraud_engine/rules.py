@@ -409,6 +409,21 @@ def mule_link(signals: Signals) -> Optional[RuleHit]:
     )
 
 
+def mule_account_blocked(signals: Signals) -> Optional[RuleHit]:
+    """Conta pega repassando dinheiro de golpe fica bloqueada: não envia nem recebe.
+
+    Vale até para conta própria: mandar para outra conta do mesmo CPF é a
+    saída mais simples para o laranja barrado.
+    """
+    history = signals.history
+    caught = f"teve um repasse de dinheiro de golpe barrado nos últimos {p.MULE_BLOCK_WINDOW_DAYS} dias"
+    if history.source_caught_mule:
+        return RuleHit("MULE_ACCOUNT_BLOCKED", BENEFICIARY, 0, True, f"conta pagadora {caught}: bloqueada para enviar")
+    if history.destination_caught_mule:
+        return RuleHit("MULE_ACCOUNT_BLOCKED", BENEFICIARY, 0, True, f"conta destino {caught}: bloqueada para receber")
+    return None
+
+
 def flagged_destination(signals: Signals) -> Optional[RuleHit]:
     payers = signals.history.destination_flagged_payers
     if payers <= 0:
@@ -554,6 +569,7 @@ RULES: List[Callable[[Signals], Optional[RuleHit]]] = [
     night_total_hard_limit,
     new_device_daily_limit,
     impossible_travel_other_device,
+    mule_account_blocked,
     velocity_burst,
     probing_after_rejection,
     night_high_value,

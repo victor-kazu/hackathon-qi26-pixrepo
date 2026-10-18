@@ -85,6 +85,9 @@ class History:
     source_inbound_amount: int = 0
     source_inbound_suspicious_payers: int = 0
     destination_mule_links: int = 0
+    # Pagador e destino já tiveram um repasse de dinheiro de golpe barrado.
+    source_caught_mule: bool = False
+    destination_caught_mule: bool = False
     # Quanto saiu desta conta desde o começo da noite (20h), antes deste Pix.
     night_outflow: int = 0
     # Maior soma de Pix aprovados num mesmo dia, nos últimos 90 dias,
@@ -159,6 +162,8 @@ class Signals:
             "source_inbound_amount_24h": self.history.source_inbound_amount,
             "source_inbound_suspicious_payers_24h": self.history.source_inbound_suspicious_payers,
             "destination_mule_links_30d": self.history.destination_mule_links,
+            "source_caught_mule_30d": self.history.source_caught_mule,
+            "destination_caught_mule_30d": self.history.destination_caught_mule,
             "night_outflow_before_this_pix": self.history.night_outflow,
             "max_daily_outflow_90d": self.history.max_daily_outflow,
             "daily_limit": self.daily_limit,

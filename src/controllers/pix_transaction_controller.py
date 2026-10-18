@@ -170,10 +170,22 @@ class PixTransactionController(BaseController):
             destination_mule_links=repository.count_destination_mule_links(
                 facts, timedelta(days=p.MULE_LINK_WINDOW_DAYS), MULE_PASS_THROUGH
             ),
+            source_caught_mule=self._is_caught_mule(
+                facts, (facts.source_branch, facts.source_account_number, facts.source_document_number)
+            ),
+            destination_caught_mule=self._is_caught_mule(
+                facts, (facts.destination_branch, facts.destination_account_number, facts.destination_document_number)
+            ),
             night_outflow=self._night_outflow(facts),
             max_daily_outflow=repository.get_source_max_daily_approved(
                 facts, timedelta(days=p.PROFILE_WINDOW_DAYS), timedelta(hours=24)
             ),
+        )
+
+    def _is_caught_mule(self, facts: TransactionFacts, account: tuple) -> bool:
+        """A conta foi barrada repassando dinheiro de golpe (MULE_PASS_THROUGH de +60) nos últimos 30 dias."""
+        return self.pix_transaction_repository.is_caught_mule(
+            facts, account, timedelta(days=p.MULE_BLOCK_WINDOW_DAYS), MULE_PASS_THROUGH, p.MULE_DIRTY_MONEY_POINTS
         )
 
     def _night_outflow(self, facts: TransactionFacts) -> int:

@@ -484,6 +484,32 @@ class TestMuleChain:
         hit = find_hit(make_signals(History(destination_mule_links=1)), "MULE_LINK")
         assert hit.points == p.MULE_LINK_POINTS
 
+    def test_mule_caught_forwarding_cannot_send_anything_else(self):
+        """Laranja barrado tenta de novo abaixo da metade do que recebeu: não é mais repasse, mas a conta está bloqueada."""
+        signals = make_signals(History(source_caught_mule=True), amount=45_000)
+        hit = find_hit(signals, "MULE_ACCOUNT_BLOCKED")
+
+        assert hit is not None and hit.hard
+        assert "MULE_PASS_THROUGH" not in rule_codes(signals)
+        assert decide(signals).status == "rejected"
+
+    def test_mule_caught_forwarding_cannot_receive_from_new_victims(self):
+        signals = make_signals(History(destination_caught_mule=True), amount=45_000)
+
+        assert find_hit(signals, "MULE_ACCOUNT_BLOCKED").hard
+        assert decide(signals).status == "rejected"
+
+    def test_mule_block_reaches_a_transfer_to_its_own_account(self):
+        signals = make_signals(
+            History(source_caught_mule=True),
+            amount=100_000,
+            destination_document_number="12345678909",
+            destination_opening_date=NOW - timedelta(days=400),
+        )
+
+        assert signals.is_self_transfer
+        assert "MULE_ACCOUNT_BLOCKED" in rule_codes(signals)
+
 
 class TestTrust:
     def test_trusted_counterparty_needs_time_and_repetition(self):

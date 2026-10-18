@@ -303,6 +303,33 @@ class PixTransactionRepository:
         )
         return query.scalar()
 
+    def is_caught_mule(
+        self,
+        facts: "TransactionFacts",
+        account: Tuple[str, str, str],
+        window: timedelta,
+        rule_code: str,
+        min_points: int,
+    ) -> bool:
+        """A conta (agência, número, documento) teve um Pix REJEITADO por repassar dinheiro de golpe na janela."""
+        branch, account_number, document_number = account
+        caught = (
+            self.session.query(PixTransaction.id)
+            .join(PixTransaction.analysis)
+            .join(PixAnalysis.status)
+            .join(PixAnalysis.rule_hits)
+            .filter(
+                PixTransaction.source_branch == branch,
+                PixTransaction.source_account_number == account_number,
+                PixTransaction.source_document_number == document_number,
+                PixAnalysisStatus.enumerator == PixAnalysisStatus.REJECTED,
+                PixAnalysisRuleHit.rule_code == rule_code,
+                PixAnalysisRuleHit.points >= min_points,
+                *self._window_filter(facts, window),
+            )
+        )
+        return self.session.query(caught.exists()).scalar()
+
     # ─── Filtros ────────────────────────────────────────────────────
 
     def _source_query(self, facts: "TransactionFacts", window: Optional[timedelta], statuses: List[str] = None):

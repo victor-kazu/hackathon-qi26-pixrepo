@@ -401,6 +401,55 @@ class TestScams:
         assert "MULE_LINK" in rules_of(second_victim)
         assert "FLAGGED_DESTINATION" not in rules_of(second_victim)
 
+    def test_mule_caught_forwarding_is_blocked_both_ways(self):
+        """Depois do repasse barrado, o laranja não manda para outro laranja ou outra central e não recebe de novas vítimas.
+
+        Sem o bloqueio, a segunda tentativa abaixo da metade do que entrou
+        não era mais repasse e só pedia 2FA, que o dono do laranja passa; no
+        dia seguinte, fora da janela de 24 h, saía aprovada.
+        """
+        mule_cpf = RandomGenerator.generate_cpf()
+        mule_as_destination = PayloadGenerator.create_account(
+            participant="60701190", opening_date=PayloadGenerator.daytime(days_ago=5), document_number=mule_cpf
+        )
+        mule_as_source = {key: value for key, value in mule_as_destination.items() if key != "participant"}
+
+        ObjectGenerator.analyze_pix(
+            amount=300_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=2, hour=14),
+            destination_account=mule_as_destination,
+        )
+        to_hub = ObjectGenerator.analyze_pix(
+            amount=290_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=2, hour=14, minute=20),
+            source_account=mule_as_source,
+            destination_account=PayloadGenerator.create_account(participant="18236120"),
+        )
+        to_another_mule = ObjectGenerator.analyze_pix(
+            amount=140_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=2, hour=14, minute=30),
+            source_account=mule_as_source,
+            destination_account=PayloadGenerator.create_account(
+                participant="18236120", opening_date=PayloadGenerator.daytime(days_ago=5)
+            ),
+        )
+        next_day = ObjectGenerator.analyze_pix(
+            amount=45_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=16),
+            source_account=mule_as_source,
+        )
+        new_victim = ObjectGenerator.analyze_pix(
+            amount=45_000,
+            transaction_date=PayloadGenerator.daytime(days_ago=1, hour=17),
+            destination_account=mule_as_destination,
+        )
+
+        assert to_hub["status"] == "rejected"
+        assert "MULE_PASS_THROUGH" in rules_of(to_hub)
+        for response in (to_another_mule, next_day, new_victim):
+            assert response["status"] == "rejected"
+            assert "MULE_ACCOUNT_BLOCKED" in rules_of(response)
+
     def test_daily_ceiling_counts_what_already_left(self):
         """R$ 12 mil passa com 2FA; outros R$ 12 mil no mesmo dia estouram o teto de R$ 20 mil e também pedem 2FA."""
         source_account = PayloadGenerator.create_account()

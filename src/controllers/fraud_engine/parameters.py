@@ -7,7 +7,7 @@ análise, e é o que permite explicar uma decisão antiga com a regra que
 valia no dia.
 """
 
-POLICY_VERSION = "2026.10.18-v10"
+POLICY_VERSION = "2026.10.18-v11"
 
 REAIS = 100
 
@@ -257,6 +257,16 @@ MULE_DIRTY_MONEY_POINTS = 60
 #    que com o primeiro Pix para ela (+10) já rejeita.
 MULE_LINK_WINDOW_DAYS = 30
 MULE_LINK_POINTS = 50
+#
+# 3. A conta já foi PEGA repassando dinheiro de golpe? Um Pix dela foi
+#    rejeitado pelo MULE_PASS_THROUGH de dinheiro sujo (+60) nos últimos
+#    30 dias. Daí em diante ela fica bloqueada nos dois sentidos, por
+#    regra dura: não envia para ninguém (outro laranja, outra central,
+#    nem conta própria) e não recebe de novas vítimas. Sem isso, o
+#    laranja barrado tentava de novo com um valor abaixo da metade do
+#    que recebeu, passava no 2FA (o dono do laranja tem o segundo fator)
+#    e, se a conta não fosse nova, seguia recebendo de quem caísse no golpe.
+MULE_BLOCK_WINDOW_DAYS = 30
 
 # Primeiro Pix para este destino. Sozinho é fraco (todo mundo paga
 # alguém pela primeira vez), por isso só acima de R$ 500 e com peso baixo.

@@ -4,7 +4,7 @@
 |---|---|
 | **Time** | Grupo 3 · Victor Kazunori · Matheus Reis |
 | **Data** | 17/10/2026 |
-| **Versão** | 1 (política `2026.10.18-v10`) |
+| **Versão** | 1 (política `2026.10.18-v11`) |
 
 ## Contextualização
 
@@ -20,13 +20,13 @@ Como o Pix é liquidado na hora e é irrevogável, a decisão precisa sair antes
 - **Um Pix, uma análise:** o mesmo `id` reenviado devolve a mesma decisão, sem reavaliar; o mesmo `id` com outro conteúdo é recusado. Se falhar, o reenvio conta duas vezes no histórico, ou um `id` aprovado "aprova" outro valor.
 - **Histórico consistente sob concorrência:** dois Pix simultâneos da mesma conta não podem ler o mesmo histórico. Se falhar, uma rajada de Pix passa inteira pela regra de velocidade.
 
-Fora do escopo desta entrega: onboarding e cadastro de contas, front-end, outras APIs (como a consulta de CNPJ no Serpro), a confirmação do resultado do 2FA e a atestação do aparelho.
+Fora do escopo desta entrega: onboarding e cadastro de contas, front-end, outras APIs (como a consulta de CNPJ no Serpro), a confirmação do resultado do 2FA, a atestação do aparelho e o ajuste de limite noturno pedido pelo cliente (o aumento vale só depois de no mínimo 24 h, e esse dado não vem no payload; o motor usa o teto padrão).
 
 ### Explicando a solução de forma macro
 
-O resource valida o formato (JSON Schema). O controller valida o conteúdo (CPF/CNPJ, datas), trata a idempotência, trava a conta pagadora e busca o histórico pelo repository: 20 consultas, todas recortadas "até a data deste Pix". Com esse retrato, o motor (Python puro, em `controllers/fraud_engine/`, sem banco nem HTTP) monta os sinais e roda 29 regras, de quatro tipos:
+O resource valida o formato (JSON Schema). O controller valida o conteúdo (CPF/CNPJ, datas), trata a idempotência, trava a conta pagadora e busca o histórico pelo repository: 22 consultas, todas recortadas "até a data deste Pix". Com esse retrato, o motor (Python puro, em `controllers/fraud_engine/`, sem banco nem HTTP) monta os sinais e roda 30 regras, de quatro tipos:
 
-- **Duras (6):** rejeitam sozinhas.
+- **Duras (7):** rejeitam sozinhas. Uma delas bloqueia, por 30 dias, a conta pega repassando dinheiro de golpe.
 - **De identidade:** somam no placar de identidade, que pede 2FA.
 - **De destino:** somam no placar de destino, que rejeita, porque o 2FA não ajuda.
 - **Bônus de confiança:** descontam só da própria categoria.
@@ -133,7 +133,7 @@ sequenceDiagram
     Note over DB: conta pagadora travada
     CT->>DB: SELECT analise por pix_id (de novo, ja com a trava)
     DB-->>CT: nenhuma
-    CT->>DB: 20 consultas de historico ate transaction_date
+    CT->>DB: 22 consultas de historico ate transaction_date
     DB-->>CT: historico
     CT->>M: build_signals + decide
     M-->>CT: status, placares, regras acionadas
@@ -149,7 +149,7 @@ sequenceDiagram
 4. Trava a conta pagadora com `pg_advisory_xact_lock`, que dura até o fim da transação. Outra análise da mesma conta espera aqui.
 5. Procura o `pix_id` de novo, já com a trava: um reenvio que esperou a trava encontra aqui a análise do primeiro.
 6. Busca o histórico (pagador, destino, par pagador→destino, aparelho, IP, cadeia de laranjas, soma da noite), sempre até o `transaction_date`. Um Pix nunca é julgado com informação que só existiu depois dele.
-7. O motor monta os sinais, roda as 29 regras e lê a tabela de decisão.
+7. O motor monta os sinais, roda as 30 regras e lê a tabela de decisão.
 8. O controller grava o Pix, a análise e uma linha por regra acionada, confirma (o que solta a trava) e responde `201`.
 
 **Analisar um Pix — falha: o mesmo `id` de novo**
@@ -203,5 +203,7 @@ sequenceDiagram
 >   - **Régua por maturidade:** as regras duras olham quem paga. Conta nova é barrada no 5º Pix em 5 minutos e com 3 pagadores no aparelho; conta com 180 dias e histórico aprovado pede 2FA e só é barrada em volumes que nenhum uso humano explica.
 >   - **Conta própria comprovada:** o mesmo CPF só vale como transferência entre contas próprias se a conta de destino é antiga ou já conhecida.
 >   - **Teto diário que pede 2FA:** passar do teto de 24 h pede 2FA e nunca rejeita sozinho, porque esvaziar a conta com o celular destravado é tomada de conta, que o 2FA segura. O teto acompanha o histórico: 3x o maior dia dos últimos 90 dias (pessoa física com perfil), ou R$ 20 mil sem perfil.
+>   - **Teto noturno com saída:** acima de R$ 5.000 à noite o Pix é rejeitado, mesmo no aparelho de sempre, porque sob coação a vítima passa no 2FA. O cliente que precisa de um Pix maior ajusta o limite antes, e pelo Regulamento do Pix o aumento só vale depois de no mínimo 24 h, prazo que o sequestrador não tem. Esse ajuste é cadastral e não vem no payload, então fica como evolução: com ele no contrato, o teto passaria a ser o limite do cliente.
+>   - **Laranja pego fica bloqueado:** o motor barra o repasse do laranja quando o dinheiro que entrou já parecia golpe. A partir daí a conta não envia (nem para outro laranja, outra central ou conta do mesmo CPF) e não recebe por 30 dias. Sem isso, a segunda tentativa abaixo da metade do valor recebido só pedia 2FA, que o dono do laranja passa.
 >   - **Funil com piso de valor:** muitos pagadores para a mesma pessoa física só pesam a partir de R$ 200 por Pix. O golpe em massa tira centenas ou milhares de cada vítima; o vendedor ambulante recebe de dezenas de clientes em ticket baixo e não pode cair no 2FA a cada venda.
 >   - **Calibragem medida:** cada número saiu da simulação. Com a semente 42: 89% dos clientes bons aprovados direto e nenhum rejeitado, com latência p99 de 39 ms.
